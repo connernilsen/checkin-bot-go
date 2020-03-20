@@ -13,7 +13,8 @@ import (
   "github.com/joho/godotenv"
 )
 
-static API_TOKEN string
+var API_TOKEN string
+const SERVICE_URL = "https://slack.com/api/"
 
 func MapToString(m map[string]string) string {
     b := new(bytes.Buffer)
@@ -21,7 +22,9 @@ func MapToString(m map[string]string) string {
     for key, value := range m {
         fmt.Fprintf(b, "\"%s\":\"%s\",", key, value)
     }
-    b.Truncate(b.Len() - 2)
+    if len(m) > 0 {
+      b.Truncate(b.Len() - 2)
+    } 
     fmt.Fprintf(b, "}")
     return b.String()
 }
@@ -42,15 +45,19 @@ func CaptureResponseBody(r io.ReadCloser) string {
   return builder.String()
 }
 
-func PerformPost(url string, headers map[string]string, body string) (res *Response, err error) {
-  req, err := http.NewRequest("POST", url, body)
+func PerformPost(url string, headers map[string]string, body string, includeAuth bool) (res *http.Response, err error) {
+  url = fmt.Sprint(SERVICE_URL, url)
+  req, err := http.NewRequest("POST", url, strings.NewReader(body))
   if err != nil {
-    return err
+    return nil, err
   } else {
     log.Println("Pre-request")
   }
-  authHeader := fmt.Sprintf("Bearer %s", API_TOKEN)
-  req.Header.Add("Authorization", authHeader)
+
+  if includeAuth {
+    authHeader := fmt.Sprintf("Bearer %s", API_TOKEN)
+    req.Header.Add("Authorization", authHeader)
+  }
   req.Header.Add("Content-Type", "application/json")
   req.Header.Add("charset", "utf-8")
 
@@ -58,7 +65,9 @@ func PerformPost(url string, headers map[string]string, body string) (res *Respo
     req.Header.Add(key, value)
   }
 
+  log.Printf("Performing POST for URL: %s\n", url)
   client := &http.Client{}
+  defer log.Println("Post-request")
   return client.Do(req)
 }
 
@@ -70,7 +79,7 @@ func SendMessage(message, channelId, thread string) {
   }
   ret["channel"] = channelId
 
-  req, err := http.NewRequest("POST", "https://slack.com/api/chat.postMessage", strings.NewReader(MapToString(ret)))
+  req, err := http.NewRequest("POST", "chat.postMessage", strings.NewReader(MapToString(ret)))
 
   if err != nil {
     log.Fatal(err)
@@ -101,27 +110,19 @@ func TestSlack(error bool, message string) {
   var arg string
   if error {
     fmt.Printf("Error testing %s", message)
-    arg = fmt.Sprintf("error=%s", message)
+    arg = fmt.Sprintf("test_error=%s", message)
   } else {
     fmt.Printf("Testing %s", message)
     arg = fmt.Sprintf("test_message=%s", message)
   }
-  req, err := http.NewRequest("POST", fmt.Sprintf("https://slack.com/api/api.test?%s", arg), 
-    strings.NewReader(""))
-  
-  if err != nil {
-    log.Fatal(err)
-  } else {
-    log.Println("Pre-request")
-  }
-  
+  url := fmt.Sprintf("api.test?%s", arg)
+  res, err := PerformPost(url, nil, "", false)
 
   if err != nil {
     log.Fatal(err)
   } else {
     log.Printf("Status: %s", res.Status)
     log.Printf(CaptureResponseBody(res.Body))
-    log.Println("Post-request")
   }
 }
 
@@ -143,8 +144,10 @@ func main() {
   port := os.Getenv("PORT")
   API_TOKEN = os.Getenv("API_TOKEN")
   if port == "" || API_TOKEN == "" {
-    log.Fatal("$PORT must be set")
+    log.Fatal("PORT and API_TOKEN must be set")
   }
+
+  log.Println("Server starting...")
  
   router := mux.NewRouter()
 
