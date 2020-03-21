@@ -25,16 +25,12 @@ var MAIN_CHANNEL_NAME string
 type SlackResponse struct {
   Ok bool
   Channels []ConversationList
-  Members []ConversationMembers
+  Members []string
 }
 
 type ConversationList struct {
   Id, Name string
   Is_channel, Is_group, Is_im, Is_member, Is_mpim, Is_private bool
-}
-
-type ConversationMembers struct {
-  Members []string
 }
 
 func StringMapToPostBody(m map[string]string) string {
@@ -80,7 +76,7 @@ func CaptureResponseBody(r io.ReadCloser) string {
 
 func HandleResponse(res *http.Response, err error, logBody bool) string {
 	if err != nil {
-		log.Println("Error:")
+		log.Println("Error in HandleResponse:")
 		log.Println(err)
     return ""
 	} else {
@@ -173,6 +169,56 @@ func TestSlack(error bool, message string) {
 	HandleResponse(res, err, true)
 }
 
+func GetChannels(logAnswer bool) (channels map[string]ConversationList) {
+	url := "conversations.list"
+	res, err := PerformGet(url, nil, nil, true)
+  body := HandleResponse(res, err, false)
+
+  var resp SlackResponse
+  err = json.Unmarshal([]byte(body), &resp)
+
+	if err != nil {
+		log.Println("Error in GetChannels:")
+		log.Println(err)
+	}
+
+  channels = make(map[string]ConversationList)
+  for _, item := range resp.Channels {
+    channels[item.Name] = item
+  }
+  if logAnswer {
+    log.Println(channels)
+  }
+
+  if MAIN_CHANNEL_ID == "" {
+    MAIN_CHANNEL_ID = channels[MAIN_CHANNEL_NAME].Id
+    log.Printf("Main Channel Name: %s, Id: %s\n", MAIN_CHANNEL_NAME, MAIN_CHANNEL_ID)
+  }
+  return channels
+}
+
+func GetUsers(channelId string, logAnswer bool) (users []string) {
+  url := "conversations.members"
+  params := make(map[string]string)
+  params["channel"] = channelId
+  res, err := PerformGet(url, nil, params, true)
+  body := HandleResponse(res, err, false)
+
+  var resp SlackResponse
+  err = json.Unmarshal([]byte(body), &resp)
+
+  if err != nil {
+    log.Println("Error in GetUsers:")
+    log.Println(err)
+  }
+
+  if logAnswer {
+    log.Println(resp.Members)
+  }
+
+  return resp.Members
+}
+
 func TestSuccess(w http.ResponseWriter, r *http.Request) {
 	TestSlack(false, r.URL.Path)
 	w.Write([]byte("Tested Success"))
@@ -188,30 +234,17 @@ func RunGetChannels(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Channels Retrieved"))
 }
 
-func GetChannels(logBody bool) (channels map[string]ConversationList) {
-	url := "conversations.list"
-	res, err := PerformGet(url, nil, nil, logBody)
-  body := HandleResponse(res, err, false)
-
-  var resp SlackResponse
-  err = json.Unmarshal([]byte(body), &resp)
-
-	if err != nil {
-		log.Println("Error:")
-		log.Println(err)
-	}
-
-  channels = make(map[string]ConversationList)
-  for _, item := range resp.Channels {
-    channels[item.Name] = item
-  }
-
+func RunGetUsers(w http.ResponseWriter, r *http.Request) {
   if MAIN_CHANNEL_ID == "" {
-    MAIN_CHANNEL_ID = channels[MAIN_CHANNEL_NAME].Id
-    log.Printf("Main Channel Name: %s, Id: %s\n", MAIN_CHANNEL_NAME, MAIN_CHANNEL_ID)
+    GetChannels(true)
   }
-  return channels
+
+  GetUsers(MAIN_CHANNEL_ID, true)
+  w.Write([]byte("Users Retrieved"))
 }
+
+
+
 
 func main() {
 	err := godotenv.Load()
@@ -233,5 +266,6 @@ func main() {
 	router.HandleFunc("/test", TestSuccess)
 	router.HandleFunc("/testError", TestError)
 	router.HandleFunc("/getConvos", RunGetChannels)
+  router.HandleFunc("/getUsers", RunGetUsers)
 	log.Fatal(http.ListenAndServe(port, router))
 }
