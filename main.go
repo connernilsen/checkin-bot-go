@@ -19,6 +19,9 @@ var API_TOKEN string
 
 const SERVICE_URL = "https://slack.com/api/"
 
+var MAIN_CHANNEL_ID string
+var MAIN_CHANNEL_NAME string
+
 type SlackResponse struct {
   Ok bool
   Channels []ConversationList
@@ -26,7 +29,7 @@ type SlackResponse struct {
 }
 
 type ConversationList struct {
-  Id string
+  Id, Name string
   Is_channel, Is_group, Is_im, Is_member, Is_mpim, Is_private bool
 }
 
@@ -75,7 +78,7 @@ func CaptureResponseBody(r io.ReadCloser) string {
 	return builder.String()
 }
 
-func HandleResponse(res *http.Response, err error) string {
+func HandleResponse(res *http.Response, err error, logBody bool) string {
 	if err != nil {
 		log.Println("Error:")
 		log.Println(err)
@@ -83,7 +86,9 @@ func HandleResponse(res *http.Response, err error) string {
 	} else {
 		log.Printf("Status: %s", res.Status)
     body := CaptureResponseBody(res.Body)
-		log.Printf(body)
+    if logBody {
+		  log.Printf(body)
+    }
     return body
 	}
 }
@@ -150,7 +155,7 @@ func SendMessage(message, channelId, thread string) {
 
 	res, err := PerformPost("chat.postMessage", nil, StringMapToPostBody(ret), true)
 
-	HandleResponse(res, err)
+	HandleResponse(res, err, true)
 }
 
 func TestSlack(error bool, message string) {
@@ -165,7 +170,7 @@ func TestSlack(error bool, message string) {
 	url := fmt.Sprintf("api.test?%s", arg)
 	res, err := PerformPost(url, nil, "", false)
 
-	HandleResponse(res, err)
+	HandleResponse(res, err, true)
 }
 
 func TestSuccess(w http.ResponseWriter, r *http.Request) {
@@ -179,21 +184,33 @@ func TestError(w http.ResponseWriter, r *http.Request) {
 }
 
 func RunGetChannels(w http.ResponseWriter, r *http.Request) {
-	GetChannels()
+	GetChannels(true)
 	w.Write([]byte("Channels Retrieved"))
 }
 
-func GetChannels() {
+func GetChannels(logBody bool) (channels map[string]ConversationList) {
 	url := "conversations.list"
-	res, err := PerformGet(url, nil, nil, true)
-  body := HandleResponse(res, err)
-	var resp map[string]interface{}
+	res, err := PerformGet(url, nil, nil, logBody)
+  body := HandleResponse(res, err, false)
+
+  var resp SlackResponse
   err = json.Unmarshal([]byte(body), &resp)
+
 	if err != nil {
 		log.Println("Error:")
 		log.Println(err)
 	}
-  log.Println(resp)
+
+  channels = make(map[string]ConversationList)
+  for _, item := range resp.Channels {
+    channels[item.Name] = item
+  }
+
+  if MAIN_CHANNEL_ID == "" {
+    MAIN_CHANNEL_ID = channels[MAIN_CHANNEL_NAME].Id
+    log.Printf("Main Channel Name: %s, Id: %s\n", MAIN_CHANNEL_NAME, MAIN_CHANNEL_ID)
+  }
+  return channels
 }
 
 func main() {
@@ -203,7 +220,8 @@ func main() {
 	}
 	port := os.Getenv("PORT")
 	API_TOKEN = os.Getenv("API_TOKEN")
-	if port == "" || API_TOKEN == "" {
+  MAIN_CHANNEL_NAME = os.Getenv("MAIN_CHANNEL_NAME")
+	if port == "" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT and API_TOKEN must be set")
 	}
 
