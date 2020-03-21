@@ -26,6 +26,7 @@ type SlackResponse struct {
   Ok bool
   Channels []ConversationList
   Members []string
+  Channel map[string]string
 }
 
 type ConversationList struct {
@@ -34,13 +35,16 @@ type ConversationList struct {
 }
 
 func StringMapToPostBody(m map[string]string) string {
+  if m == nil {
+    return ""
+  }
   b := new(bytes.Buffer)
 	fmt.Fprintf(b, "{")
 	for key, value := range m {
 		fmt.Fprintf(b, "\"%s\":\"%s\",", key, value)
 	}
 	if len(m) > 0 {
-		b.Truncate(b.Len() - 2)
+		b.Truncate(b.Len() - 1)
 	}
 	fmt.Fprintf(b, "}")
 	return b.String()
@@ -120,9 +124,9 @@ func PerformGet(url string, headers map[string]string, body map[string]string, i
 	return DoRequest(url, req)
 }
 
-func PerformPost(url string, headers map[string]string, body string, includeAuth bool) (res *http.Response, err error) {
+func PerformPost(url string, headers map[string]string, body map[string]string, includeAuth bool) (res *http.Response, err error) {
 	url = fmt.Sprint(SERVICE_URL, url)
-	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+	req, err := http.NewRequest("POST", url, strings.NewReader(StringMapToPostBody(body)))
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +141,8 @@ func PerformPost(url string, headers map[string]string, body string, includeAuth
 		req.Header.Add(key, value)
 	}
 
-	log.Printf("Performing POST for URL: %s\n", url)
+  log.Printf("Performing POST for URL: %s with Body:\n", url)
+  log.Println(StringMapToPostBody(body))
 	return DoRequest(url, req)
 }
 
@@ -149,7 +154,7 @@ func SendMessage(message, channelId, thread string) {
 	}
 	ret["channel"] = channelId
 
-	res, err := PerformPost("chat.postMessage", nil, StringMapToPostBody(ret), true)
+	res, err := PerformPost("chat.postMessage", nil, ret, true)
 
 	HandleResponse(res, err, true)
 }
@@ -157,14 +162,14 @@ func SendMessage(message, channelId, thread string) {
 func TestSlack(error bool, message string) {
 	var arg string
 	if error {
-		fmt.Printf("Error testing %s", message)
+		fmt.Printf("Error test for %s", message)
 		arg = fmt.Sprintf("error=%s", message)
 	} else {
 		fmt.Printf("Testing %s", message)
 		arg = fmt.Sprintf("test_message=%s", message)
 	}
 	url := fmt.Sprintf("api.test?%s", arg)
-	res, err := PerformPost(url, nil, "", false)
+	res, err := PerformPost(url, nil, nil, false)
 
 	HandleResponse(res, err, true)
 }
@@ -177,9 +182,11 @@ func GetChannels(logAnswer bool) (channels map[string]ConversationList) {
   var resp SlackResponse
   err = json.Unmarshal([]byte(body), &resp)
 
-	if err != nil {
+	if err != nil || !resp.Ok {
 		log.Println("Error in GetChannels:")
 		log.Println(err)
+    log.Printf("resp.Ok: %t\n", resp.Ok)
+    return nil
 	}
 
   channels = make(map[string]ConversationList)
@@ -207,9 +214,11 @@ func GetUsers(channelId string, logAnswer bool) (users []string) {
   var resp SlackResponse
   err = json.Unmarshal([]byte(body), &resp)
 
-  if err != nil {
+  if err != nil || !resp.Ok {
     log.Println("Error in GetUsers:")
     log.Println(err)
+    log.Printf("resp.Ok: %t\n", resp.Ok)
+    return nil
   }
 
   if logAnswer {
@@ -218,6 +227,28 @@ func GetUsers(channelId string, logAnswer bool) (users []string) {
 
   return resp.Members
 }
+
+func MessageUser(userId string) {
+  url := "conversations.open"
+  body := make(map[string]string)
+  //body["token"] = API_TOKEN
+  body["users"] = userId
+  res, err := PerformPost(url, nil, body, true)
+  resp := HandleResponse(res, err, false)
+
+  var tempResp SlackResponse 
+  err = json.Unmarshal([]byte(resp), &tempResp)
+  if err != nil || !tempResp.Ok {
+    log.Println("Error in MessageUser:")
+    log.Println(err)
+    log.Printf("resp.Ok: %t\n", tempResp.Ok)
+    return 
+  }
+  newChannelId := tempResp.Channel["id"]
+
+  SendMessage("hello", newChannelId, "")
+}
+
 
 func TestSuccess(w http.ResponseWriter, r *http.Request) {
 	TestSlack(false, r.URL.Path)
@@ -243,8 +274,11 @@ func RunGetUsers(w http.ResponseWriter, r *http.Request) {
   w.Write([]byte("Users Retrieved"))
 }
 
-
-
+func RunMessageUser(w http.ResponseWriter, r *http.Request) {
+  myId := "UNCHAPM3R"
+  MessageUser(myId)
+  w.Write([]byte("Message Sent to User"))
+}
 
 func main() {
 	err := godotenv.Load()
@@ -267,5 +301,6 @@ func main() {
 	router.HandleFunc("/testError", TestError)
 	router.HandleFunc("/getConvos", RunGetChannels)
   router.HandleFunc("/getUsers", RunGetUsers)
+  router.HandleFunc("/message", RunMessageUser)
 	log.Fatal(http.ListenAndServe(port, router))
 }
