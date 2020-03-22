@@ -18,6 +18,7 @@ var API_TOKEN string
 const SERVICE_URL = "https://slack.com/api/"
 var MAIN_CHANNEL_ID string
 var MAIN_CHANNEL_NAME string
+var CURRENT_THREAD_ID string
 
 type SlackResponse struct {
   Ok bool
@@ -26,11 +27,18 @@ type SlackResponse struct {
   Channel map[string]string
   Type string
   Challenge string
+  Event SlackEvent
 }
 
 type ConversationList struct {
   Id, Name string
   Is_channel, Is_group, Is_im, Is_member, Is_mpim, Is_private bool
+}
+
+type SlackEvent struct {
+  Type string
+  Text string
+  User string
 }
 
 func StringMapToPostBody(m map[string]string) string {
@@ -227,7 +235,7 @@ func GetUsers(channelId string, logAnswer bool) (users []string) {
   return resp.Members
 }
 
-func MessageUser(userId string) {
+func MessageUser(userId, message string) {
   url := "conversations.open"
   params := make(map[string]string)
   params["users"] = userId
@@ -244,7 +252,7 @@ func MessageUser(userId string) {
   }
   newChannelId := resp.Channel["id"]
 
-  SendMessage("hello", newChannelId, "")
+  SendMessage(message, newChannelId, "")
 }
 
 
@@ -274,7 +282,7 @@ func RunGetUsers(w http.ResponseWriter, r *http.Request) {
 
 func RunMessageUser(w http.ResponseWriter, r *http.Request) {
   myId := "UNCHAPM3R"
-  MessageUser(myId)
+  MessageUser(myId, "hello")
   w.Write([]byte("Message Sent to User"))
 }
 
@@ -286,9 +294,12 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
     w.Write([]byte(resp.Challenge))
     log.Println("Slack API Callback Url Verified")
     return
-  }
-
-  log.Println(body)
+  } else if resp.Type == "message" {
+    if CURRENT_THREAD_ID == "" {
+      MessageUser(resp.Event.User, "No instance currently open")
+      return
+    }
+  } 
 }
 
 func main() {
