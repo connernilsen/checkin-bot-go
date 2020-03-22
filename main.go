@@ -24,6 +24,8 @@ type SlackResponse struct {
   Channels []ConversationList
   Members []string
   Channel map[string]string
+  Type string
+  Challenge string
 }
 
 type ConversationList struct {
@@ -279,9 +281,12 @@ func RunMessageUser(w http.ResponseWriter, r *http.Request) {
 
 func HandleDirectMessage(w http.ResponseWriter, r *http.Request) {
   body := CaptureResponseBody(r.Body)
-  var verify map[string]interface{}
-  json.Unmarshal([]byte(body), &verify)
-  w.Write([]byte(verify["challenge"].(string)))
+  var resp SlackResponse
+  json.Unmarshal([]byte(body), &resp)
+  if resp.Type == "url_verification" {
+    w.Write([]byte(resp.Challenge))
+    return
+  }
 }
 
 func main() {
