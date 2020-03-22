@@ -146,28 +146,28 @@ func PerformPost(url string, headers map[string]string, body map[string]string, 
 }
 
 func SendMessage(message, channelId, thread string) {
-	ret := make(map[string]string)
-	ret["text"] = message
+	params := make(map[string]string)
+	params["text"] = message
 	if thread == "" {
-		ret["thread_ts"] = thread
+		params["thread_ts"] = thread
 	}
-	ret["channel"] = channelId
+	params["channel"] = channelId
 
-	res, err := PerformPost("chat.postMessage", nil, ret, true)
+	res, err := PerformPost("chat.postMessage", nil, params, true)
 
 	HandleResponse(res, err, true)
 }
 
 func TestSlack(error bool, message string) {
-	var arg string
+	var params string
 	if error {
 		fmt.Printf("Error test for %s", message)
-		arg = fmt.Sprintf("error=%s", message)
+		params = fmt.Sprintf("error=%s", message)
 	} else {
 		fmt.Printf("Testing %s", message)
-		arg = fmt.Sprintf("test_message=%s", message)
+		params = fmt.Sprintf("test_message=%s", message)
 	}
-	url := fmt.Sprintf("api.test?%s", arg)
+	url := fmt.Sprintf("api.test?%s", params)
 	res, err := PerformPost(url, nil, nil, false)
 
 	HandleResponse(res, err, true)
@@ -229,21 +229,20 @@ func GetUsers(channelId string, logAnswer bool) (users []string) {
 
 func MessageUser(userId string) {
   url := "conversations.open"
-  body := make(map[string]string)
-  //body["token"] = API_TOKEN
-  body["users"] = userId
-  res, err := PerformPost(url, nil, body, true)
-  resp := HandleResponse(res, err, false)
+  params := make(map[string]string)
+  params["users"] = userId
+  res, err := PerformPost(url, nil, params, true)
+  body := HandleResponse(res, err, false)
 
-  var tempResp SlackResponse 
-  err = json.Unmarshal([]byte(resp), &tempResp)
-  if err != nil || !tempResp.Ok {
+  var resp SlackResponse 
+  err = json.Unmarshal([]byte(body), &resp)
+  if err != nil || !resp.Ok {
     log.Println("Error in MessageUser:")
     log.Println(err)
-    log.Printf("resp.Ok: %t\n", tempResp.Ok)
+    log.Printf("resp.Ok: %t\n", resp.Ok)
     return 
   }
-  newChannelId := tempResp.Channel["id"]
+  newChannelId := resp.Channel["id"]
 
   SendMessage("hello", newChannelId, "")
 }
@@ -279,14 +278,17 @@ func RunMessageUser(w http.ResponseWriter, r *http.Request) {
   w.Write([]byte("Message Sent to User"))
 }
 
-func HandleDirectMessage(w http.ResponseWriter, r *http.Request) {
+func HandleCallback(w http.ResponseWriter, r *http.Request) {
   body := CaptureResponseBody(r.Body)
   var resp SlackResponse
   json.Unmarshal([]byte(body), &resp)
   if resp.Type == "url_verification" {
     w.Write([]byte(resp.Challenge))
+    log.Println("Slack API Callback Url Verified")
     return
   }
+
+  log.Println(body)
 }
 
 func main() {
@@ -310,7 +312,7 @@ func main() {
 
 	router := mux.NewRouter()
 
-	router.HandleFunc("/", HandleDirectMessage)
+	router.HandleFunc("/", HandleCallback)
 	router.HandleFunc("/test", TestSuccess)
 	router.HandleFunc("/testError", TestError)
 	router.HandleFunc("/getConvos", RunGetChannels)
