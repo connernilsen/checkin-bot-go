@@ -283,20 +283,23 @@ func HandleDirectMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+  var port string
   if os.Getenv("ENVIRONMENT") == "development" {
   	err := godotenv.Load()
   	if err != nil {
   		log.Fatal(err)
   	}
+	  port = os.Getenv("PORT")
+  } else {
+    port = fmt.Sprintf(":%s", os.Getenv("PORT"))
   }
-	port := os.Getenv("PORT")
 	API_TOKEN = os.Getenv("API_TOKEN")
   MAIN_CHANNEL_NAME = os.Getenv("MAIN_CHANNEL_NAME")
-	if port == "" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
-		log.Fatal("PORT and API_TOKEN must be set")
+  if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
+		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
 
-	log.Println("Server starting...")
+  log.Printf("Server starting on Port: %s...\n", port)
 
 	router := mux.NewRouter()
 
