@@ -14,11 +14,8 @@ import (
 	"github.com/joho/godotenv"
 )
 
-
 var API_TOKEN string
-
 const SERVICE_URL = "https://slack.com/api/"
-
 var MAIN_CHANNEL_ID string
 var MAIN_CHANNEL_NAME string
 
@@ -280,6 +277,11 @@ func RunMessageUser(w http.ResponseWriter, r *http.Request) {
   w.Write([]byte("Message Sent to User"))
 }
 
+func HandleDirectMessage(w http.ResponseWriter, r *http.Request) {
+  log.Println(CaptureResponseBody(r.Body))
+  w.Write([]byte("Success"))
+}
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -296,7 +298,7 @@ func main() {
 
 	router := mux.NewRouter()
 
-	//router.HandleFunc("/", PerformCheckin)
+	router.HandleFunc("/", HandleDirectMessage)
 	router.HandleFunc("/test", TestSuccess)
 	router.HandleFunc("/testError", TestError)
 	router.HandleFunc("/getConvos", RunGetChannels)
