@@ -278,8 +278,10 @@ func RunMessageUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleDirectMessage(w http.ResponseWriter, r *http.Request) {
-  log.Println(CaptureResponseBody(r.Body))
-  w.Write([]byte("Success"))
+  body := CaptureResponseBody(r.Body)
+  var verify map[string]interface{}
+  json.Unmarshal([]byte(body), &verify)
+  w.Write([]byte(verify["challenge"].(string)))
 }
 
 func main() {
