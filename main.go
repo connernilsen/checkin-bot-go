@@ -283,10 +283,12 @@ func HandleDirectMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal(err)
-	}
+  if os.Getenv("ENVIRONMENT") == "development" {
+  	err := godotenv.Load()
+  	if err != nil {
+  		log.Fatal(err)
+  	}
+  }
 	port := os.Getenv("PORT")
 	API_TOKEN = os.Getenv("API_TOKEN")
   MAIN_CHANNEL_NAME = os.Getenv("MAIN_CHANNEL_NAME")
