@@ -97,6 +97,16 @@ func CaptureResponseBody(r io.ReadCloser) string {
 	return builder.String()
 }
 
+func UnmarshalGet(req string) map[string]string {
+  body := make(map[string]string)
+  split := strings.Split(req, "&")
+  for _, val := range split {
+    temp := strings.Split(val, "=")
+    body[temp[0]] = temp[1]
+  }
+  return body
+}
+
 func HandleResponse(res *http.Response, err error, logBody bool) (resp SlackResponse, retErr error) {
 	if err != nil {
 		log.Println("Error in HandleResponse:")
@@ -298,6 +308,11 @@ func TestError(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Tested Error"))
 }
 
+func CloseCheckin(w http.ResponseWriter, r *http.Request) {
+  CURRENT_THREAD_ID = ""
+  w.Write([]byte("Checkin Closed"))
+}
+
 func LogVars(w http.ResponseWriter, r *http.Request) {
   log.Println("API_TOKEN: ")
   log.Println(API_TOKEN)
@@ -355,6 +370,16 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleCheckin(w http.ResponseWriter, r *http.Request) {
+  req := CaptureResponseBody(r.Body)
+  reqBody := UnmarshalGet(req)
+  userId := reqBody["user_id"]
+  userName, err := GetUsername(userId)
+  if err != nil {
+    log.Println("Error finding username in HandleCheckin")
+  }
+  log.Println(userName)
+
+  
   if MAIN_CHANNEL_ID == "" {
     GetChannels(false)
   }
@@ -400,5 +425,6 @@ func main() {
 	router.HandleFunc("/testError", TestError)
   router.HandleFunc("/getVars", LogVars)
   router.HandleFunc("/checkin", HandleCheckin)
+  router.HandleFunc("/close", CloseCheckin)
 	log.Fatal(http.ListenAndServe(port, router))
 }
