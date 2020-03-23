@@ -21,8 +21,8 @@ var MAIN_CHANNEL_ID string
 var MAIN_CHANNEL_NAME string
 var CURRENT_THREAD_ID string
 var USER_LIST []string
-const MyId = "UNCHAPM3R"
 const BOT_NAME = "c4c_checkin"
+var CUSTOM_ADMIN_APPENDIX string
 var ADMIN_USERS []string
 
 type SlackResponse struct {
@@ -329,7 +329,7 @@ func CloseCheckin(w http.ResponseWriter, r *http.Request) {
   }
   SendMessage("Checkin is now closed", MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
   CURRENT_THREAD_ID = ""
-  w.Write([]byte("Checkin Closed"))
+  w.Write([]byte(fmt.Sprintf("Checkin Closed%s", CUSTOM_ADMIN_APPENDIX)))
 }
 
 func LogVars(w http.ResponseWriter, r *http.Request) {
@@ -413,12 +413,12 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
   }
 
   CURRENT_THREAD_ID = body.Ts
-  w.Write([]byte("Checkin Sent"))
+  w.Write([]byte(fmt.Sprintf("Checkin Sent%s", CUSTOM_ADMIN_APPENDIX)))
 }
 
 func RemindAwaiting(w http.ResponseWriter, r *http.Request) {
   if CURRENT_THREAD_ID == "" {
-    w.Write([]byte("There is currently no open checkin session"))
+    w.Write([]byte("There is currently no open checkin session, try again later ;)"))
   }
 
   for _, userId := range USER_LIST {
@@ -427,7 +427,7 @@ func RemindAwaiting(w http.ResponseWriter, r *http.Request) {
     }
   }
 
-  w.Write([]byte("Users have been notified"))
+  w.Write([]byte(fmt.Sprintf("Users have been notified%s", CUSTOM_ADMIN_APPENDIX)))
 }
 
 func main() {
@@ -445,6 +445,7 @@ func main() {
   MAIN_CHANNEL_ID = os.Getenv("MAIN_CHANNEL_ID")
   MAIN_CHANNEL_NAME = os.Getenv("MAIN_CHANNEL_NAME")
   ADMIN_USERS = strings.Split(os.Getenv("ADMIN_USERS"), ",")
+  CUSTOM_ADMIN_APPENDIX = os.Getenv("CUSTOM_ADMIN_APPENDIX")
   if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
