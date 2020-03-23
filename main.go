@@ -23,6 +23,7 @@ var CURRENT_THREAD_ID string
 var USER_LIST []string
 const MyId = "UNCHAPM3R"
 const BOT_NAME = "c4c_checkin"
+var ADMIN_USERS []string
 
 type SlackResponse struct {
   Ok bool
@@ -105,6 +106,15 @@ func UnmarshalGet(req string) map[string]string {
     body[temp[0]] = temp[1]
   }
   return body
+}
+
+func IsAdminUser(userId string) bool {
+  for _, id := range ADMIN_USERS {
+    if userId == id {
+      return true
+    }
+  }
+  return false
 }
 
 func HandleResponse(res *http.Response, err error, logBody bool) (resp SlackResponse, retErr error) {
@@ -243,6 +253,7 @@ func GetUsers(channelId string, logAnswer bool) (users []string) {
     log.Println("Error in GetUsers:")
     log.Println(err)
     log.Printf("body.Ok: %t\n", body.Ok)
+    log.Printf("response body error: %s\n", body.Error)
     return nil
   }
 
@@ -309,6 +320,13 @@ func TestError(w http.ResponseWriter, r *http.Request) {
 }
 
 func CloseCheckin(w http.ResponseWriter, r *http.Request) {
+  req := CaptureResponseBody(r.Body)
+  reqBody := UnmarshalGet(req)
+  userId := reqBody["user_id"]
+  if !IsAdminUser(userId) && userId != "" {
+    w.Write([]byte("You are not an admin"))
+    return
+  }
   CURRENT_THREAD_ID = ""
   w.Write([]byte("Checkin Closed"))
 }
@@ -373,11 +391,10 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
   req := CaptureResponseBody(r.Body)
   reqBody := UnmarshalGet(req)
   userId := reqBody["user_id"]
-  userName, err := GetUsername(userId)
-  if err != nil {
-    log.Println("Error finding username in HandleCheckin")
+  if !IsAdminUser(userId) && userId != "" {
+    w.Write([]byte("You are not an admin"))
+    return
   }
-  log.Println(userName)
 
   
   if MAIN_CHANNEL_ID == "" {
@@ -412,6 +429,7 @@ func main() {
 	API_TOKEN = os.Getenv("API_TOKEN")
   MAIN_CHANNEL_ID = os.Getenv("MAIN_CHANNEL_ID")
   MAIN_CHANNEL_NAME = os.Getenv("MAIN_CHANNEL_NAME")
+  ADMIN_USERS = strings.Split(os.Getenv("ADMIN_USERS"), ",")
   if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
