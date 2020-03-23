@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+  "time"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -19,6 +20,9 @@ const SERVICE_URL = "https://slack.com/api/"
 var MAIN_CHANNEL_ID string
 var MAIN_CHANNEL_NAME string
 var CURRENT_THREAD_ID string
+var USER_LIST []string
+const MyId = "UNCHAPM3R"
+const EXRESP = `{"token":"3yODKK499aMdVmmlfDfCrGXh","team_id":"THZ1G7SAE","api_app_id":"A010AEELNU8","event":{"client_msg_id":"81184c25-15f8-47ff-ab42-2f5b0c6b197e","type":"message","text":"test","user":"UNCHAPM3R","ts":"1584896402.000400","team":"THZ1G7SAE","blocks":[{"type":"rich_text","block_id":"DiPYm","elements":[{"type":"rich_text_section","elements":[{"type":"text","text":"test"}]}]}],"channel":"D010AHVKFA9","event_ts":"1584896402.000400","channel_type":"im"},"type":"event_callback","event_id":"Ev0107JLEKH7","event_time":1584896402,"authed_users":["U010AH5HLSU"]}`
 
 type SlackResponse struct {
   Ok bool
@@ -28,6 +32,9 @@ type SlackResponse struct {
   Type string
   Challenge string
   Event SlackEvent
+  Ts string
+  User UserInfo
+  Error string
 }
 
 type ConversationList struct {
@@ -39,6 +46,11 @@ type SlackEvent struct {
   Type string
   Text string
   User string
+}
+
+type UserInfo struct {
+  Id string
+  Real_name string
 }
 
 func StringMapToPostBody(m map[string]string) string {
@@ -85,18 +97,20 @@ func CaptureResponseBody(r io.ReadCloser) string {
 	return builder.String()
 }
 
-func HandleResponse(res *http.Response, err error, logBody bool) string {
+func HandleResponse(res *http.Response, err error, logBody bool) (resp SlackResponse, retErr error) {
 	if err != nil {
 		log.Println("Error in HandleResponse:")
 		log.Println(err)
-    return ""
+    return SlackResponse{}, err
 	} else {
 		log.Printf("Status: %s", res.Status)
     body := CaptureResponseBody(res.Body)
     if logBody {
 		  log.Printf(body)
     }
-    return body
+    var resp SlackResponse
+    err = json.Unmarshal([]byte(body), &resp)
+    return resp, err
 	}
 }
 
@@ -153,17 +167,17 @@ func PerformPost(url string, headers map[string]string, body map[string]string, 
 	return DoRequest(url, req)
 }
 
-func SendMessage(message, channelId, thread string) {
+func SendMessage(message, channelId, thread string) (body SlackResponse, err error) {
 	params := make(map[string]string)
 	params["text"] = message
-	if thread == "" {
+	if thread != "" {
 		params["thread_ts"] = thread
 	}
 	params["channel"] = channelId
 
 	res, err := PerformPost("chat.postMessage", nil, params, true)
 
-	HandleResponse(res, err, true)
+  return HandleResponse(res, err, false)
 }
 
 func TestSlack(error bool, message string) {
@@ -184,20 +198,17 @@ func TestSlack(error bool, message string) {
 func GetChannels(logAnswer bool) (channels map[string]ConversationList) {
 	url := "conversations.list"
 	res, err := PerformGet(url, nil, nil, true)
-  body := HandleResponse(res, err, false)
+  body, err := HandleResponse(res, err, false)
 
-  var resp SlackResponse
-  err = json.Unmarshal([]byte(body), &resp)
-
-	if err != nil || !resp.Ok {
+	if err != nil || !body.Ok {
 		log.Println("Error in GetChannels:")
 		log.Println(err)
-    log.Printf("resp.Ok: %t\n", resp.Ok)
+    log.Printf("body.Ok: %t\n", body.Ok)
     return nil
 	}
 
   channels = make(map[string]ConversationList)
-  for _, item := range resp.Channels {
+  for _, item := range body.Channels {
     channels[item.Name] = item
   }
   if logAnswer {
@@ -216,23 +227,20 @@ func GetUsers(channelId string, logAnswer bool) (users []string) {
   params := make(map[string]string)
   params["channel"] = channelId
   res, err := PerformGet(url, nil, params, true)
-  body := HandleResponse(res, err, false)
+  body, err := HandleResponse(res, err, false)
 
-  var resp SlackResponse
-  err = json.Unmarshal([]byte(body), &resp)
-
-  if err != nil || !resp.Ok {
+  if err != nil || !body.Ok {
     log.Println("Error in GetUsers:")
     log.Println(err)
-    log.Printf("resp.Ok: %t\n", resp.Ok)
+    log.Printf("body.Ok: %t\n", body.Ok)
     return nil
   }
 
   if logAnswer {
-    log.Println(resp.Members)
+    log.Println(body.Members)
   }
 
-  return resp.Members
+  return body.Members
 }
 
 func MessageUser(userId, message string) {
@@ -240,21 +248,45 @@ func MessageUser(userId, message string) {
   params := make(map[string]string)
   params["users"] = userId
   res, err := PerformPost(url, nil, params, true)
-  body := HandleResponse(res, err, false)
+  body, err := HandleResponse(res, err, false)
 
-  var resp SlackResponse 
-  err = json.Unmarshal([]byte(body), &resp)
-  if err != nil || !resp.Ok {
+  if err != nil || !body.Ok {
     log.Println("Error in MessageUser:")
     log.Println(err)
-    log.Printf("resp.Ok: %t\n", resp.Ok)
+    log.Printf("body.Ok: %t\n", body.Ok)
     return 
   }
-  newChannelId := resp.Channel["id"]
+  newChannelId := body.Channel["id"]
 
   SendMessage(message, newChannelId, "")
 }
 
+func GetUsername(userId string) (name string, err error) {
+  url := "users.info"
+  params := make(map[string]string)
+  params["user"] = userId
+  res, err := PerformGet(url, nil, params, true)
+
+  body, err := HandleResponse(res, err, false)
+  if err != nil || !body.Ok {
+    log.Println("Error in MessageUser:")
+    log.Println(err)
+    log.Printf("body.Ok: %t\n", body.Ok)
+    return "", err
+  }
+
+  return body.User.Real_name, err
+}
+
+func UpdateUserList(userId string) bool {
+  for pos, id := range USER_LIST {
+    if userId == id {
+      USER_LIST[pos] = ""
+      return true
+    }
+  }
+  return false
+}
 
 func TestSuccess(w http.ResponseWriter, r *http.Request) {
 	TestSlack(false, r.URL.Path)
@@ -281,34 +313,71 @@ func RunGetUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func RunMessageUser(w http.ResponseWriter, r *http.Request) {
-  myId := "UNCHAPM3R"
-  MessageUser(myId, "hello")
+  MessageUser(MyId, "hello")
   w.Write([]byte("Message Sent to User"))
 }
 
 func HandleCallback(w http.ResponseWriter, r *http.Request) {
-  body := CaptureResponseBody(r.Body)
+  //body := CaptureResponseBody(r.Body)
+  body := EXRESP
   var resp SlackResponse
   json.Unmarshal([]byte(body), &resp)
   if resp.Type == "url_verification" {
     w.Write([]byte(resp.Challenge))
     log.Println("Slack API Callback Url Verified")
     return
-  } else if resp.Type == "message" {
+  } else if resp.Type == "event_callback" && resp.Event.Type == "message" {
+    w.Write([]byte("Message Received"))
+    log.Printf("Handle Message Callback for user: %s\n", resp.Event.User)
     if CURRENT_THREAD_ID == "" {
       MessageUser(resp.Event.User, "No instance currently open")
       return
     }
-  } 
+
+    if !UpdateUserList(resp.Event.User) {
+      MessageUser(resp.Event.User, "Cannot change response, please go to thread and post followup")
+      return
+    }
+
+    name, err := GetUsername(resp.Event.User)
+    if err != nil {
+      log.Println("Error in HandleCallback:")
+      log.Println(err)
+    }
+    log.Printf("%s's Response: %s", name, resp.Event.Text)
+    body, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, resp.Event.Text), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
+    log.Println(body.Error)
+
+  } else {
+    w.Write([]byte("HandleCallback but no valid condition found"))
+  }
 }
+
+func HandleCheckin(w http.ResponseWriter, r *http.Request) {
+  if MAIN_CHANNEL_ID == "" {
+    GetChannels(false)
+  }
+
+  USER_LIST = GetUsers(MAIN_CHANNEL_ID, false)
+
+  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time.Now().Format("Jan 2")), MyId, "")
+  MAIN_CHANNEL_ID = MyId
+  if err != nil {
+    log.Println("Error in HandleCheckin")
+  }
+
+  CURRENT_THREAD_ID = body.Ts
+  w.Write([]byte("Checkin Handled"))
+}
+
 
 func main() {
   var port string
+  err := godotenv.Load()
+  if err != nil {
+    log.Println(err)
+  }
   if os.Getenv("ENVIRONMENT") == "development" {
-  	err := godotenv.Load()
-  	if err != nil {
-  		log.Fatal(err)
-  	}
 	  port = os.Getenv("PORT")
   } else {
     port = fmt.Sprintf(":%s", os.Getenv("PORT"))
@@ -329,5 +398,6 @@ func main() {
 	router.HandleFunc("/getConvos", RunGetChannels)
   router.HandleFunc("/getUsers", RunGetUsers)
   router.HandleFunc("/message", RunMessageUser)
+  router.HandleFunc("/checkin", HandleCheckin)
 	log.Fatal(http.ListenAndServe(port, router))
 }
