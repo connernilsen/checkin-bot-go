@@ -1,4 +1,5 @@
 # A Slack bot for standups and check-ins 
+## Environment Variables Setup
 To run the bot, perform the following steps:
 - Create a `.env` file in the root directory with the following values:
   - `API_TOKEN` - set to your Slack API *user* token
