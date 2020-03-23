@@ -298,6 +298,24 @@ func TestError(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Tested Error"))
 }
 
+func LogVars(w http.ResponseWriter, r *http.Request) {
+  log.Println("API_TOKEN: ")
+  log.Println(API_TOKEN)
+  log.Println("\nSERVICE_URL")
+  log.Println(SERVICE_URL)
+  log.Println("\nMAIN_CHANNEL_NAME")
+  log.Println(MAIN_CHANNEL_NAME)
+  log.Println("\nMAIN_CHANNEL_ID")
+  log.Println(MAIN_CHANNEL_ID)
+  log.Println("\nCURRENT_THREAD_ID")
+  log.Println(CURRENT_THREAD_ID)
+  log.Println("\nUSER_LIST")
+  log.Println(USER_LIST)
+  log.Println("\nBOT_NAME")
+  log.Println(BOT_NAME)
+  w.Write([]byte("Done"))
+}
+
 func HandleCallback(w http.ResponseWriter, r *http.Request) {
   req := CaptureResponseBody(r.Body)
   var body SlackResponse
@@ -309,7 +327,6 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
   } else if body.Type == "event_callback" && body.Event.Type == "message" {
     w.Write([]byte("Message Received"))
     name, err := GetUsername(body.Event.User)
-    log.Println(name)
     if name == BOT_NAME {
       return
     }
@@ -353,7 +370,7 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
   }
 
   CURRENT_THREAD_ID = body.Ts
-  w.Write([]byte("Checkin Handled"))
+  w.Write([]byte("Checkin Sent"))
 }
 
 func main() {
@@ -381,6 +398,7 @@ func main() {
 	router.HandleFunc("/", HandleCallback)
 	router.HandleFunc("/test", TestSuccess)
 	router.HandleFunc("/testError", TestError)
+  router.HandleFunc("/getVars", LogVars)
   router.HandleFunc("/checkin", HandleCheckin)
 	log.Fatal(http.ListenAndServe(port, router))
 }
