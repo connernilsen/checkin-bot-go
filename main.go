@@ -22,6 +22,7 @@ var MAIN_CHANNEL_NAME string
 var CURRENT_THREAD_ID string
 var USER_LIST []string
 const MyId = "UNCHAPM3R"
+const BOT_NAME = "c4c_checkin"
 
 type SlackResponse struct {
   Ok bool
@@ -307,6 +308,11 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
     return
   } else if body.Type == "event_callback" && body.Event.Type == "message" {
     w.Write([]byte("Message Received"))
+    name, err := GetUsername(body.Event.User)
+    log.Println(name)
+    if name == BOT_NAME {
+      return
+    }
     log.Printf("Handle Message Callback for user: %s\n", body.Event.User)
     if CURRENT_THREAD_ID == "" {
       MessageUser(body.Event.User, "No instance currently open")
@@ -318,7 +324,6 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       return
     }
 
-    name, err := GetUsername(body.Event.User)
     if err != nil {
       log.Println("Error in HandleCallback:")
       log.Println(err)
