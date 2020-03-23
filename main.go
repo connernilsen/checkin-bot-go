@@ -25,6 +25,7 @@ const BOT_NAME = "c4c_checkin"
 var CUSTOM_ADMIN_APPENDIX string
 var ADMIN_USERS []string
 
+// type to unmarshal JSON Slack responses into
 type SlackResponse struct {
   Ok bool
   Channels []ConversationList
@@ -38,22 +39,26 @@ type SlackResponse struct {
   Error string
 }
 
+// type to contain conversation info
 type ConversationList struct {
   Id, Name string
   Is_channel, Is_group, Is_im, Is_member, Is_mpim, Is_private bool
 }
 
+// type to contain Slack Event callback info
 type SlackEvent struct {
   Type string
   Text string
   User string
 }
 
+// type to contain user info
 type UserInfo struct {
   Id string
   Real_name string
 }
 
+// converts a string map to a JSON string
 func StringMapToPostBody(m map[string]string) string {
   if m == nil {
     return ""
@@ -70,6 +75,7 @@ func StringMapToPostBody(m map[string]string) string {
 	return b.String()
 }
 
+// conversts a string map to a url encoded param map
 func StringMapToGetBody(m map[string]string, trail bool) string {
 	b := new(bytes.Buffer)
 	fmt.Fprintf(b, "?")
@@ -82,6 +88,7 @@ func StringMapToGetBody(m map[string]string, trail bool) string {
 	return b.String()
 }
 
+// take a request/response body and parse it into a string
 func CaptureResponseBody(r io.ReadCloser) string {
 	builder := strings.Builder{}
 
@@ -98,6 +105,7 @@ func CaptureResponseBody(r io.ReadCloser) string {
 	return builder.String()
 }
 
+// unmarshal get url-encoded string into a string map
 func UnmarshalGet(req string) map[string]string {
   body := make(map[string]string)
   split := strings.Split(req, "&")
@@ -108,6 +116,7 @@ func UnmarshalGet(req string) map[string]string {
   return body
 }
 
+// determines if user with given userId is an admin user
 func IsAdminUser(userId string) bool {
   for _, id := range ADMIN_USERS {
     if userId == id {
@@ -117,6 +126,7 @@ func IsAdminUser(userId string) bool {
   return false
 }
 
+// handle http responses and error, and convert the response into SlackResponse or error
 func HandleResponse(res *http.Response, err error, logBody bool) (resp SlackResponse, retErr error) {
 	if err != nil {
 		log.Println("Error in HandleResponse:")
@@ -134,6 +144,7 @@ func HandleResponse(res *http.Response, err error, logBody bool) (resp SlackResp
 	}
 }
 
+// perform request by creating client and using do method
 func DoRequest(url string, req *http.Request) (res *http.Response, err error) {
 	req.Header.Add("charset", "utf-8")
 	client := http.Client{}
@@ -143,6 +154,7 @@ func DoRequest(url string, req *http.Request) (res *http.Response, err error) {
 	return client.Do(req)
 }
 
+// perform HTTP GET request and return the response
 func PerformGet(url string, headers map[string]string, body map[string]string, includeAuth bool) (res *http.Response, err error) {
 	if includeAuth {
 		url = fmt.Sprintf("%s%s%stoken=%s", SERVICE_URL, url, StringMapToGetBody(body, true), API_TOKEN)
@@ -165,6 +177,7 @@ func PerformGet(url string, headers map[string]string, body map[string]string, i
 	return DoRequest(url, req)
 }
 
+// perform HTTP POST request and return the response
 func PerformPost(url string, headers map[string]string, body map[string]string, includeAuth bool) (res *http.Response, err error) {
 	url = fmt.Sprint(SERVICE_URL, url)
 	req, err := http.NewRequest("POST", url, strings.NewReader(StringMapToPostBody(body)))
@@ -187,6 +200,7 @@ func PerformPost(url string, headers map[string]string, body map[string]string, 
 	return DoRequest(url, req)
 }
 
+// send the given message to the given channel and optional thread, then return the resulting SlackResponse
 func SendMessage(message, channelId, thread string) (body SlackResponse, err error) {
 	params := make(map[string]string)
 	params["text"] = message
@@ -200,6 +214,7 @@ func SendMessage(message, channelId, thread string) (body SlackResponse, err err
   return HandleResponse(res, err, false)
 }
 
+// hit up the Slack test endpoint
 func TestSlack(error bool, message string) {
 	var params string
 	if error {
@@ -215,6 +230,9 @@ func TestSlack(error bool, message string) {
 	HandleResponse(res, err, true)
 }
 
+// get all (public) channels in the Slack workspace and optionally log the response, 
+// then return a map of names to ConversationList
+// if MAIN_CHANNEL_ID is not set, then it is updated 
 func GetChannels(logAnswer bool) (channels map[string]ConversationList) {
 	url := "conversations.list"
 	res, err := PerformGet(url, nil, nil, true)
@@ -242,6 +260,7 @@ func GetChannels(logAnswer bool) (channels map[string]ConversationList) {
   return channels
 }
 
+// get all users in the given channel and optionally log the response, then return the list of userIds
 func GetUsers(channelId string, logAnswer bool) (users []string) {
   url := "conversations.members"
   params := make(map[string]string)
@@ -264,6 +283,7 @@ func GetUsers(channelId string, logAnswer bool) (users []string) {
   return body.Members
 }
 
+// send the given message to the given user by userId
 func MessageUser(userId, message string) {
   url := "conversations.open"
   params := make(map[string]string)
@@ -282,6 +302,7 @@ func MessageUser(userId, message string) {
   SendMessage(message, newChannelId, "")
 }
 
+// get the username of a userId
 func GetUsername(userId string) (name string, err error) {
   url := "users.info"
   params := make(map[string]string)
@@ -299,6 +320,9 @@ func GetUsername(userId string) (name string, err error) {
   return body.User.Real_name, err
 }
 
+// update the global list of users by setting the user to an empty string if they should be
+// removed (i.e. if they have already responded)
+// returns a boolean representing whether or not the user has been updated
 func UpdateUserList(userId string) bool {
   for pos, id := range USER_LIST {
     if userId == id {
@@ -309,16 +333,21 @@ func UpdateUserList(userId string) bool {
   return false
 }
 
+// the handler for the /test endpoint
 func TestSuccess(w http.ResponseWriter, r *http.Request) {
 	TestSlack(false, r.URL.Path)
 	w.Write([]byte("Tested Success"))
 }
 
+// the handler for the /testError endpoint
 func TestError(w http.ResponseWriter, r *http.Request) {
 	TestSlack(true, r.URL.Path)
 	w.Write([]byte("Tested Error"))
 }
 
+// the handler for the /close endpoint
+// if the given user_id is not part of the admin users global var or empty,
+// then the function does not proceed
 func CloseCheckin(w http.ResponseWriter, r *http.Request) {
   req := CaptureResponseBody(r.Body)
   reqBody := UnmarshalGet(req)
@@ -332,28 +361,34 @@ func CloseCheckin(w http.ResponseWriter, r *http.Request) {
   w.Write([]byte(fmt.Sprintf("Checkin Closed%s", CUSTOM_ADMIN_APPENDIX)))
 }
 
+// log global vars to console
 func LogVars(w http.ResponseWriter, r *http.Request) {
   log.Println("API_TOKEN: ")
   log.Println(API_TOKEN)
-  log.Println("\nSERVICE_URL")
+  log.Println("SERVICE_URL")
   log.Println(SERVICE_URL)
-  log.Println("\nMAIN_CHANNEL_NAME")
+  log.Println("MAIN_CHANNEL_NAME")
   log.Println(MAIN_CHANNEL_NAME)
-  log.Println("\nMAIN_CHANNEL_ID")
+  log.Println("MAIN_CHANNEL_ID")
   log.Println(MAIN_CHANNEL_ID)
-  log.Println("\nCURRENT_THREAD_ID")
+  log.Println("CURRENT_THREAD_ID")
   log.Println(CURRENT_THREAD_ID)
-  log.Println("\nUSER_LIST")
+  log.Println("USER_LIST")
   log.Println(USER_LIST)
-  log.Println("\nBOT_NAME")
+  log.Println("BOT_NAME")
   log.Println(BOT_NAME)
   w.Write([]byte("Done"))
 }
 
+// handle / endpoint callback
+// if type is 'url_verification', then returns verificaiton token
+// if type is 'event_callback', event type is 'message', and initiator is not the bot, then 
+// handle user message response
 func HandleCallback(w http.ResponseWriter, r *http.Request) {
-  req := CaptureResponseBody(r.Body)
-  var body SlackResponse
-  json.Unmarshal([]byte(req), &body)
+  body := HandleResponseBody(r, nil, nil)
+  //req := CaptureResponseBody(r.Body)
+  //var body SlackResponse
+  //json.Unmarshal([]byte(req), &body)
   if body.Type == "url_verification" {
     w.Write([]byte(body.Challenge))
     log.Println("Slack API Callback Url Verified")
@@ -382,12 +417,17 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
     log.Printf("%s's Response: %s", name, body.Event.Text)
     body, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, body.Event.Text), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
     log.Println(body.Error)
-
   } else {
+
     w.Write([]byte("HandleCallback but no valid condition found"))
   }
 }
 
+// handles the checkin initiation endpoint
+// updates the MAIN_CHANNEL_ID global var, gets the users in the main channel, 
+// and notifies them about the checkin
+// if the given user_id is not part of the admin users global var or empty,
+// then the function does not proceed
 func HandleCheckin(w http.ResponseWriter, r *http.Request) {
   req := CaptureResponseBody(r.Body)
   reqBody := UnmarshalGet(req)
@@ -397,7 +437,6 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
     return
   }
 
-  
   if MAIN_CHANNEL_ID == "" {
     GetChannels(false)
   }
@@ -416,6 +455,9 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
   w.Write([]byte(fmt.Sprintf("Checkin Sent%s", CUSTOM_ADMIN_APPENDIX)))
 }
 
+// reminds the users who have not yet completed their checkin that they need to complete it
+// if the given user_id is not part of the admin users global var or empty,
+// then the function does not proceed
 func RemindAwaiting(w http.ResponseWriter, r *http.Request) {
   if CURRENT_THREAD_ID == "" {
     w.Write([]byte("There is currently no open checkin session, try again later ;)"))
@@ -431,6 +473,7 @@ func RemindAwaiting(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+  // sets up necessary env vars
   var port string
   err := godotenv.Load()
   if err != nil {
@@ -450,10 +493,11 @@ func main() {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
 
+  // sets up router
   log.Printf("Server starting on Port: %s...\n", port)
-
 	router := mux.NewRouter()
 
+  // setup routes
 	router.HandleFunc("/", HandleCallback)
 	router.HandleFunc("/test", TestSuccess)
 	router.HandleFunc("/testError", TestError)

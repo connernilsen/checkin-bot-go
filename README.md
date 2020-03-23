@@ -4,6 +4,7 @@ To run the bot, perform the following steps:
   - `API_TOKEN` - set to your Slack API *user* token
   - `MAIN_CHANNEL_NAME` - set to the channel you want the aggregated responses to be sent in
   - `PORT` - set to the port you want this to run on (must be prefixed with a `:`, ex `:8000`)
+  - `ADMIN_USERS` - sets the list of admin users by userId, separated by `,`
   - `MAIN_CHANNEL_ID` (optional) - if you want to override the channel id and ignore the channel name
   - `CUSTOM_ADMIN_APPENDIX` (optional) - something to be appended at the end of responses to admin commands
   - `ENVIRONMENT` (optional) - set to `development` if you want this to be run in development
