@@ -314,7 +314,7 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
     }
 
     if !UpdateUserList(body.Event.User) {
-      MessageUser(body.Event.User, "Cannot change bodyonse, please go to thread and post followup")
+      MessageUser(body.Event.User, "Cannot change body once sent, please go to thread and post followup.")
       return
     }
 
@@ -338,6 +338,9 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
   }
 
   USER_LIST = GetUsers(MAIN_CHANNEL_ID, false)
+  for _, userId := range USER_LIST {
+    MessageUser(userId, "Hey! It's time for your checkin. Let me know what you're gonna do, how long you think it will take, and when you plan on working on this *in one message please*.")
+  }
 
   body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time.Now().Format("Jan 2")), MAIN_CHANNEL_ID, "")
   if err != nil {
