@@ -22,7 +22,6 @@ var MAIN_CHANNEL_NAME string
 var CURRENT_THREAD_ID string
 var USER_LIST []string
 const MyId = "UNCHAPM3R"
-const EXRESP = `{"token":"3yODKK499aMdVmmlfDfCrGXh","team_id":"THZ1G7SAE","api_app_id":"A010AEELNU8","event":{"client_msg_id":"81184c25-15f8-47ff-ab42-2f5b0c6b197e","type":"message","text":"test","user":"UNCHAPM3R","ts":"1584896402.000400","team":"THZ1G7SAE","blocks":[{"type":"rich_text","block_id":"DiPYm","elements":[{"type":"rich_text_section","elements":[{"type":"text","text":"test"}]}]}],"channel":"D010AHVKFA9","event_ts":"1584896402.000400","channel_type":"im"},"type":"event_callback","event_id":"Ev0107JLEKH7","event_time":1584896402,"authed_users":["U010AH5HLSU"]}`
 
 type SlackResponse struct {
   Ok bool
@@ -298,54 +297,34 @@ func TestError(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Tested Error"))
 }
 
-func RunGetChannels(w http.ResponseWriter, r *http.Request) {
-	GetChannels(true)
-	w.Write([]byte("Channels Retrieved"))
-}
-
-func RunGetUsers(w http.ResponseWriter, r *http.Request) {
-  if MAIN_CHANNEL_ID == "" {
-    GetChannels(true)
-  }
-
-  GetUsers(MAIN_CHANNEL_ID, true)
-  w.Write([]byte("Users Retrieved"))
-}
-
-func RunMessageUser(w http.ResponseWriter, r *http.Request) {
-  MessageUser(MyId, "hello")
-  w.Write([]byte("Message Sent to User"))
-}
-
 func HandleCallback(w http.ResponseWriter, r *http.Request) {
-  //body := CaptureResponseBody(r.Body)
-  body := EXRESP
-  var resp SlackResponse
-  json.Unmarshal([]byte(body), &resp)
-  if resp.Type == "url_verification" {
-    w.Write([]byte(resp.Challenge))
+  req := CaptureResponseBody(r.Body)
+  var body SlackResponse
+  json.Unmarshal([]byte(req), &body)
+  if body.Type == "url_verification" {
+    w.Write([]byte(body.Challenge))
     log.Println("Slack API Callback Url Verified")
     return
-  } else if resp.Type == "event_callback" && resp.Event.Type == "message" {
+  } else if body.Type == "event_callback" && body.Event.Type == "message" {
     w.Write([]byte("Message Received"))
-    log.Printf("Handle Message Callback for user: %s\n", resp.Event.User)
+    log.Printf("Handle Message Callback for user: %s\n", body.Event.User)
     if CURRENT_THREAD_ID == "" {
-      MessageUser(resp.Event.User, "No instance currently open")
+      MessageUser(body.Event.User, "No instance currently open")
       return
     }
 
-    if !UpdateUserList(resp.Event.User) {
-      MessageUser(resp.Event.User, "Cannot change response, please go to thread and post followup")
+    if !UpdateUserList(body.Event.User) {
+      MessageUser(body.Event.User, "Cannot change bodyonse, please go to thread and post followup")
       return
     }
 
-    name, err := GetUsername(resp.Event.User)
+    name, err := GetUsername(body.Event.User)
     if err != nil {
       log.Println("Error in HandleCallback:")
       log.Println(err)
     }
-    log.Printf("%s's Response: %s", name, resp.Event.Text)
-    body, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, resp.Event.Text), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
+    log.Printf("%s's Response: %s", name, body.Event.Text)
+    body, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, body.Event.Text), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
     log.Println(body.Error)
 
   } else {
@@ -360,8 +339,7 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
 
   USER_LIST = GetUsers(MAIN_CHANNEL_ID, false)
 
-  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time.Now().Format("Jan 2")), MyId, "")
-  MAIN_CHANNEL_ID = MyId
+  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time.Now().Format("Jan 2")), MAIN_CHANNEL_ID, "")
   if err != nil {
     log.Println("Error in HandleCheckin")
   }
@@ -369,7 +347,6 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
   CURRENT_THREAD_ID = body.Ts
   w.Write([]byte("Checkin Handled"))
 }
-
 
 func main() {
   var port string
@@ -383,6 +360,7 @@ func main() {
     port = fmt.Sprintf(":%s", os.Getenv("PORT"))
   }
 	API_TOKEN = os.Getenv("API_TOKEN")
+  MAIN_CHANNEL_ID = os.Getenv("MAIN_CHANNEL_ID")
   MAIN_CHANNEL_NAME = os.Getenv("MAIN_CHANNEL_NAME")
   if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
@@ -395,9 +373,6 @@ func main() {
 	router.HandleFunc("/", HandleCallback)
 	router.HandleFunc("/test", TestSuccess)
 	router.HandleFunc("/testError", TestError)
-	router.HandleFunc("/getConvos", RunGetChannels)
-  router.HandleFunc("/getUsers", RunGetUsers)
-  router.HandleFunc("/message", RunMessageUser)
   router.HandleFunc("/checkin", HandleCheckin)
 	log.Fatal(http.ListenAndServe(port, router))
 }
