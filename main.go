@@ -24,6 +24,8 @@ var USER_LIST []string
 const BOT_NAME = "c4c_checkin"
 var CUSTOM_ADMIN_APPENDIX string
 var ADMIN_USERS []string
+var OPEN_CHECKIN_STR string
+var CLOSE_CHECKIN_STR string
 
 // type to unmarshal JSON Slack responses into
 type SlackResponse struct {
@@ -361,6 +363,26 @@ func CloseCheckin(w http.ResponseWriter, r *http.Request) {
   w.Write([]byte(fmt.Sprintf("Checkin Closed%s", CUSTOM_ADMIN_APPENDIX)))
 }
 
+// Opens checkin by getting the main channel id, notifying users, opening the 
+// main thread message in the MAIN_CHANNEL_NAME, and saving the thread id
+func OpenCheckin() {
+  if MAIN_CHANNEL_ID == "" {
+    GetChannels(false)
+  }
+
+  USER_LIST = GetUsers(MAIN_CHANNEL_ID, false)
+  for _, userId := range USER_LIST {
+    MessageUser(userId, "Hey! It's time for your checkin. Let me know what you're gonna do, how long you think it will take, and when you plan on working on this -- *in one message please*. Thanks.")
+  }
+
+  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time.Now().Format("Jan 2")), MAIN_CHANNEL_ID, "")
+  if err != nil {
+    log.Println("Error in HandleCheckin")
+  }
+
+  CURRENT_THREAD_ID = body.Ts
+}
+
 // log global vars to console
 func LogVars(w http.ResponseWriter, r *http.Request) {
   log.Println("API_TOKEN: ")
@@ -377,6 +399,10 @@ func LogVars(w http.ResponseWriter, r *http.Request) {
   log.Println(USER_LIST)
   log.Println("BOT_NAME")
   log.Println(BOT_NAME)
+  log.Println("OPEN_CHECKIN_STR")
+  log.Println(OPEN_CHECKIN_STR)
+  log.Println("CLOSE_CHECKIN_STR")
+  log.Println(CLOSE_CHECKIN_STR)
   w.Write([]byte("Done"))
 }
 
@@ -413,11 +439,22 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       log.Println("Error in HandleCallback:")
       log.Println(err)
     }
+    MessageUser(body.Event.User, fmt.Sprintf("Hey, thanks for your response! You should soon see it in #%s under the most recent thread. Have a good rest of your day", MAIN_CHANNEL_NAME))
     log.Printf("%s's Response: %s", name, body.Event.Text)
     messageResp, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, body.Event.Text), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
     log.Println(messageResp.Error)
+  } else if body.Type == "event_callback" && body.Event.Type == "app_mention" {
+    if strings.Contains(body.Event.Text, OPEN_CHECKIN_STR) {
+      OpenCheckin()
+      log.Println("Checkin Opened by Event Callback")
+    } else if strings.Contains(body.Event.Text, CLOSE_CHECKIN_STR) {
+      SendMessage("Checkin is now closed", MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
+      CURRENT_THREAD_ID = ""
+      log.Println("Checkin Closed by Event Callback")
+    } else {
+      log.Println("No action performed in Event Callback")
+    }
   } else {
-
     log.Println("Unknown callback:")
     log.Println(req)
     w.Write([]byte("HandleCallback but no valid condition found"))
@@ -438,21 +475,8 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
     return
   }
 
-  if MAIN_CHANNEL_ID == "" {
-    GetChannels(false)
-  }
+  OpenCheckin()
 
-  USER_LIST = GetUsers(MAIN_CHANNEL_ID, false)
-  for _, userId := range USER_LIST {
-    MessageUser(userId, "Hey! It's time for your checkin. Let me know what you're gonna do, how long you think it will take, and when you plan on working on this -- *in one message please*. Thanks.")
-  }
-
-  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time.Now().Format("Jan 2")), MAIN_CHANNEL_ID, "")
-  if err != nil {
-    log.Println("Error in HandleCheckin")
-  }
-
-  CURRENT_THREAD_ID = body.Ts
   w.Write([]byte(fmt.Sprintf("Checkin Sent%s", CUSTOM_ADMIN_APPENDIX)))
 }
 
@@ -490,6 +514,8 @@ func main() {
   MAIN_CHANNEL_NAME = os.Getenv("MAIN_CHANNEL_NAME")
   ADMIN_USERS = strings.Split(os.Getenv("ADMIN_USERS"), ",")
   CUSTOM_ADMIN_APPENDIX = os.Getenv("CUSTOM_ADMIN_APPENDIX")
+  OPEN_CHECKIN_STR = os.Getenv("OPEN_CHECKIN_STR")
+  CLOSE_CHECKIN_STR = os.Getenv("CLOSE_CHECKIN_STR")
   if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
