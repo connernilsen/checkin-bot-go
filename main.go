@@ -385,10 +385,9 @@ func LogVars(w http.ResponseWriter, r *http.Request) {
 // if type is 'event_callback', event type is 'message', and initiator is not the bot, then 
 // handle user message response
 func HandleCallback(w http.ResponseWriter, r *http.Request) {
-  body := HandleResponseBody(r, nil, nil)
-  //req := CaptureResponseBody(r.Body)
-  //var body SlackResponse
-  //json.Unmarshal([]byte(req), &body)
+  req := CaptureResponseBody(r.Body)
+  var body SlackResponse
+  json.Unmarshal([]byte(req), &body)
   if body.Type == "url_verification" {
     w.Write([]byte(body.Challenge))
     log.Println("Slack API Callback Url Verified")
@@ -415,10 +414,12 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       log.Println(err)
     }
     log.Printf("%s's Response: %s", name, body.Event.Text)
-    body, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, body.Event.Text), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
-    log.Println(body.Error)
+    messageResp, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, body.Event.Text), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
+    log.Println(messageResp.Error)
   } else {
 
+    log.Println("Unknown callback:")
+    log.Println(req)
     w.Write([]byte("HandleCallback but no valid condition found"))
   }
 }
