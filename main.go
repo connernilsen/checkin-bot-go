@@ -90,6 +90,20 @@ func StringMapToGetBody(m map[string]string, trail bool) string {
 	return b.String()
 }
 
+// flattens a list of strings into a string
+func FlattenList(strs []string) string {
+  builder := strings.Builder{}
+  for pos, val := range strs {
+    if val != "" {
+      if pos != 0 {
+        builder.WriteString(", ")
+      }
+      builder.WriteString(val)
+    }
+  }
+  return builder.String()
+}
+
 // take a request/response body and parse it into a string
 func CaptureResponseBody(r io.ReadCloser) string {
 	builder := strings.Builder{}
@@ -350,7 +364,7 @@ func TestError(w http.ResponseWriter, r *http.Request) {
 // the handler for the /close endpoint
 // if the given user_id is not part of the admin users global var or empty,
 // then the function does not proceed
-func CloseCheckin(w http.ResponseWriter, r *http.Request) {
+func CloseCheckinHandler(w http.ResponseWriter, r *http.Request) {
   req := CaptureResponseBody(r.Body)
   reqBody := UnmarshalGet(req)
   userId := reqBody["user_id"]
@@ -358,10 +372,16 @@ func CloseCheckin(w http.ResponseWriter, r *http.Request) {
     w.Write([]byte("You are not an admin"))
     return
   }
-  SendMessage("Checkin is now closed", MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
-  CURRENT_THREAD_ID = ""
+  CloseCheckin()
   w.Write([]byte(fmt.Sprintf("Checkin Closed%s", CUSTOM_ADMIN_APPENDIX)))
 }
+
+func CloseCheckin() {
+  uncompletedUsers := FlattenList(USER_LIST)
+  SendMessage(fmt.Sprintf("Checkin is now closed. These users did not complete the checkin: %s", uncompletedUsers), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
+  CURRENT_THREAD_ID = ""
+}
+
 
 // Opens checkin by getting the main channel id, notifying users, opening the 
 // main thread message in the MAIN_CHANNEL_NAME, and saving the thread id
@@ -449,8 +469,7 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       OpenCheckin()
       log.Println("Checkin Opened by Event Callback")
     } else if strings.Contains(body.Event.Text, CLOSE_CHECKIN_STR) {
-      SendMessage("Checkin is now closed", MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
-      CURRENT_THREAD_ID = ""
+      CloseCheckin()
       log.Println("Checkin Closed by Event Callback")
     } else {
       log.Println("No action performed in Event Callback")
@@ -532,6 +551,6 @@ func main() {
   router.HandleFunc("/getVars", LogVars)
   router.HandleFunc("/checkin", HandleCheckin)
   router.HandleFunc("/remind", RemindAwaiting)
-  router.HandleFunc("/close", CloseCheckin)
+  router.HandleFunc("/close", CloseCheckinHandler)
 	log.Fatal(http.ListenAndServe(port, router))
 }
