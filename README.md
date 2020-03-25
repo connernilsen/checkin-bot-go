@@ -6,6 +6,8 @@ To run the bot, perform the following steps:
   - `MAIN_CHANNEL_NAME` - set to the channel you want the aggregated responses to be sent in
   - `PORT` - set to the port you want this to run on (must be prefixed with a `:`, ex `:8000`)
   - `ADMIN_USERS` - sets the list of admin users by userId, separated by `,`
+  - `OPEN_CHECKIN_STR` - the substring that the `app_mention` checks for when opening the checkin session
+  - `CLOSE_CHECKIN_STR` - the substring that the `app_mention` checks for when closing the checkin session
   - `MAIN_CHANNEL_ID` (optional) - if you want to override the channel id and ignore the channel name
   - `CUSTOM_ADMIN_APPENDIX` (optional) - something to be appended at the end of responses to admin commands
   - `ENVIRONMENT` (optional) - set to `development` if you want this to be run in development
@@ -20,7 +22,7 @@ Set up the following slash commands:
 
 ### Event Subscriptions
 Turned on, with the `/` endpoint set as the Request URL.
-Don't forget to subscribe to the `message.im` bot event.
+Don't forget to subscribe to the `message.im` and `app_mention` bot events.
 
 ### OAuth & Permissions
 Set the following scopes for OAuth:
@@ -44,3 +46,8 @@ The current endpoints are:
 - `/remind` - handles the slash callback for `/remindcheckin`
 - `/close` - handles the slash callback for `/endcheckin`
 
+## Scheduling Checkins
+Checkins can be scheduled for the future by using Slack reminders. 
+You are able to do this by scheduling a reminder in a channel that the slack bot is part of
+by mentioning the Slack bot and including either the `OPEN_CHECKIN_STR` or `CLOSE_CHECKIN_STR`
+in your message.

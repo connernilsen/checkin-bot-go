@@ -372,7 +372,7 @@ func OpenCheckin() {
 
   USER_LIST = GetUsers(MAIN_CHANNEL_ID, false)
   for _, userId := range USER_LIST {
-    MessageUser(userId, "Hey! It's time for your checkin. Let me know what you're gonna do, how long you think it will take, and when you plan on working on this -- *in one message please*. Thanks.")
+    MessageUser(userId, "Hey! It's time for your checkin. Let me know what you're gonna do, how long you think it will take, and when you plan on working on this -- *in one message please*. Thanks :)")
   }
 
   body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time.Now().Format("Jan 2")), MAIN_CHANNEL_ID, "")
@@ -410,6 +410,7 @@ func LogVars(w http.ResponseWriter, r *http.Request) {
 // if type is 'url_verification', then returns verificaiton token
 // if type is 'event_callback', event type is 'message', and initiator is not the bot, then 
 // handle user message response
+// if type is 'event_callback' and event type is 'app_mention', then open or close depending on text
 func HandleCallback(w http.ResponseWriter, r *http.Request) {
   req := CaptureResponseBody(r.Body)
   var body SlackResponse
@@ -426,7 +427,7 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
     }
     log.Printf("Handle Message Callback for user: %s\n", body.Event.User)
     if CURRENT_THREAD_ID == "" {
-      MessageUser(body.Event.User, "There is currently no open checkin session")
+      MessageUser(body.Event.User, "There is currently no open checkin session. Please try again later.")
       return
     }
 
@@ -439,7 +440,7 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       log.Println("Error in HandleCallback:")
       log.Println(err)
     }
-    MessageUser(body.Event.User, fmt.Sprintf("Hey, thanks for your response! You should soon see it in #%s under the most recent thread. Have a good rest of your day", MAIN_CHANNEL_NAME))
+    MessageUser(body.Event.User, fmt.Sprintf("Hey, thanks for your response! You should soon see it in <#%s> under the most recent thread. Hope the rest of your day goes well ;)", MAIN_CHANNEL_ID))
     log.Printf("%s's Response: %s", name, body.Event.Text)
     messageResp, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, body.Event.Text), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
     log.Println(messageResp.Error)
@@ -490,7 +491,7 @@ func RemindAwaiting(w http.ResponseWriter, r *http.Request) {
 
   for _, userId := range USER_LIST {
     if userId != "" {
-      MessageUser(userId, "Don't forget to complete the checkin session")
+      MessageUser(userId, "Don't forget to complete the checkin session!")
     }
   }
 
