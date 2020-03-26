@@ -395,7 +395,9 @@ func OpenCheckin() {
     MessageUser(userId, "Hey! It's time for your checkin. Let me know what you're gonna do, how long you think it will take, and when you plan on working on this -- *in one message please*. Thanks :)")
   }
 
-  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time.Now().Format("Jan 2")), MAIN_CHANNEL_ID, "")
+  loc, _ := time.LoadLocation("America/New_York")
+  time := time.Now().In(loc).Format("Jan 2, 2006 at 3:04pm")
+  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time), MAIN_CHANNEL_ID, "")
   if err != nil {
     log.Println("Error in HandleCheckin")
   }
