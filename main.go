@@ -393,10 +393,15 @@ func CloseCheckinHandler(w http.ResponseWriter, r *http.Request) {
 
 func CloseCheckin() {
   uncompletedUsers := FlattenList(MapIdsToNames(USER_LIST))
-  SendMessage(fmt.Sprintf("Checkin is now closed. These users did not complete the checkin: %s", uncompletedUsers), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
+  var uncompletedMessage string
+  if uncompletedUsers == "" {
+    uncompletedMessage = ""
+  } else {
+    uncompletedMessage = fmt.Sprintf(" These users did not complete the checkin: %s", uncompletedUsers)
+  }
+  SendMessage(fmt.Sprintf("Checkin is now closed.%s", uncompletedMessage), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
   CURRENT_THREAD_ID = ""
 }
-
 
 // Opens checkin by getting the main channel id, notifying users, opening the 
 // main thread message in the MAIN_CHANNEL_NAME, and saving the thread id
