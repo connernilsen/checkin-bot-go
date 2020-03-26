@@ -90,6 +90,21 @@ func StringMapToGetBody(m map[string]string, trail bool) string {
 	return b.String()
 }
 
+// maps a list of userIds to list of usernames
+func MapIdsToNames(strs []string) []string {
+  for pos, val := range strs {
+    if val != "" {
+      name, _ := GetUsername(val)
+      if name != BOT_NAME {
+        strs[pos] = name
+      } else {
+        strs[pos] = ""
+      }
+    }
+  }
+  return strs
+}
+
 // flattens a list of strings into a string
 func FlattenList(strs []string) string {
   builder := strings.Builder{}
@@ -377,7 +392,7 @@ func CloseCheckinHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CloseCheckin() {
-  uncompletedUsers := FlattenList(USER_LIST)
+  uncompletedUsers := FlattenList(MapIdsToNames(USER_LIST))
   SendMessage(fmt.Sprintf("Checkin is now closed. These users did not complete the checkin: %s", uncompletedUsers), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
   CURRENT_THREAD_ID = ""
 }
