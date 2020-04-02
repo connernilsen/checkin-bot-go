@@ -8,6 +8,7 @@ To run the bot, perform the following steps:
   - `ADMIN_USERS` - sets the list of admin users by userId, separated by `,`
   - `OPEN_CHECKIN_STR` - the substring that the `app_mention` checks for when opening the checkin session
   - `CLOSE_CHECKIN_STR` - the substring that the `app_mention` checks for when closing the checkin session
+  - `REMIND_CHECKIN_STR` - the substring that the `app_mention` checks for when reminding users to complete checkin
   - `MAIN_CHANNEL_ID` (optional) - if you want to override the channel id and ignore the channel name
   - `CUSTOM_ADMIN_APPENDIX` (optional) - something to be appended at the end of responses to admin commands
   - `ENVIRONMENT` (optional) - set to `development` if you want this to be run in development
@@ -49,5 +50,5 @@ The current endpoints are:
 ## Scheduling Checkins
 Checkins can be scheduled for the future by using Slack reminders. 
 You are able to do this by scheduling a reminder in a channel that the slack bot is part of
-by mentioning the Slack bot and including either the `OPEN_CHECKIN_STR` or `CLOSE_CHECKIN_STR`
-in your message.
+by mentioning the Slack bot and including either the `OPEN_CHECKIN_STR`, `CLOSE_CHECKIN_STR`
+or `REMIND_CHECKIN_STR` in your message.

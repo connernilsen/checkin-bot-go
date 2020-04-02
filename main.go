@@ -26,6 +26,7 @@ var CUSTOM_ADMIN_APPENDIX string
 var ADMIN_USERS []string
 var OPEN_CHECKIN_STR string
 var CLOSE_CHECKIN_STR string
+var REMIND_CHECKIN_STR string
 
 // type to unmarshal JSON Slack responses into
 type SlackResponse struct {
@@ -425,6 +426,15 @@ func OpenCheckin() {
   CURRENT_THREAD_ID = body.Ts
 }
 
+// Reminds users who have not completed checkin to complete checkin
+func RemindCheckin() {
+  for _, userId := range USER_LIST {
+    if userId != "" {
+      MessageUser(userId, "Don't forget to complete the checkin session!")
+    }
+  }
+}
+
 // log global vars to console
 func LogVars(w http.ResponseWriter, r *http.Request) {
   log.Println("API_TOKEN: ")
@@ -493,6 +503,9 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
     } else if strings.Contains(body.Event.Text, CLOSE_CHECKIN_STR) {
       CloseCheckin()
       log.Println("Checkin Closed by Event Callback")
+    } else if strings.Contains(body.Event.Text, REMIND_CHECKIN_STR) { 
+      RemindCheckin()
+      log.Println("Remind Awaiting by Event Callback")
     } else {
       log.Println("No action performed in Event Callback")
     }
@@ -530,12 +543,7 @@ func RemindAwaiting(w http.ResponseWriter, r *http.Request) {
     w.Write([]byte("There is currently no open checkin session, try again later ;)"))
   }
 
-  for _, userId := range USER_LIST {
-    if userId != "" {
-      MessageUser(userId, "Don't forget to complete the checkin session!")
-    }
-  }
-
+  RemindCheckin()
   w.Write([]byte(fmt.Sprintf("Users have been notified%s", CUSTOM_ADMIN_APPENDIX)))
 }
 
@@ -558,9 +566,14 @@ func main() {
   CUSTOM_ADMIN_APPENDIX = os.Getenv("CUSTOM_ADMIN_APPENDIX")
   OPEN_CHECKIN_STR = os.Getenv("OPEN_CHECKIN_STR")
   CLOSE_CHECKIN_STR = os.Getenv("CLOSE_CHECKIN_STR")
+  REMIND_CHECKIN_STR = os.Getenv("REMIND_CHECKIN_STR")
   if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
+
+  if OPEN_CHECKIN_STR == CLOSE_CHECKIN_STR {
+    log.Println("OPEN_CHECKIN_STR and CLOSE_CHECKIN_STR are the same, cannot open or close checkin using reminders")
+  }
 
   // sets up router
   log.Printf("Server starting on Port: %s...\n", port)
