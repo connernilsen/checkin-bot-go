@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
   "time"
+  "sync"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -27,9 +28,10 @@ var ADMIN_USERS []string
 var OPEN_CHECKIN_STR string
 var CLOSE_CHECKIN_STR string
 var REMIND_CHECKIN_STR string
-const TEMP_FILE = "temp_thread"
+const TEMP_FILE = "../temp_thread"
 var LAST_MESSAGE time.Time
 var LAST_MESSAGE_CUTOFF_MILLI time.Duration
+var MTX = sync.Mutex{}
 
 // type to unmarshal JSON Slack responses into
 type SlackResponse struct {
@@ -140,7 +142,12 @@ func FlattenList(strs []string) string {
 // thread id, since a database would be overkill here
 // call with an empty string to clear the file
 func PostThreadId(id string) error {
-  return ioutil.WriteFile(TEMP_FILE, []byte(id), 0644)
+  err := ioutil.WriteFile(TEMP_FILE, []byte(id), 0644)
+  if err != nil {
+    log.Println("Error posting thread id")
+    log.Println(err)
+  }
+  return err
 }
 
 // reads the 'persistent' temp file for getting teh current
@@ -447,18 +454,19 @@ func OpenCheckin() {
     GetChannels(false)
   }
 
+  loc, _ := time.LoadLocation("America/New_York")
+  time := time.Now().In(loc).Format("Jan 2, 2006 at 3:04pm")
+  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time), MAIN_CHANNEL_ID, "")
+  PostThreadId(body.Ts)
+
   USER_LIST = GetUsers(MAIN_CHANNEL_ID, false)
   for _, userId := range USER_LIST {
     MessageUser(userId, "Hey! It's time for your checkin. Let me know what you're gonna do, how long you think it will take, and when you plan on working on this -- *in one message please*. Thanks :)")
   }
 
-  loc, _ := time.LoadLocation("America/New_York")
-  time := time.Now().In(loc).Format("Jan 2, 2006 at 3:04pm")
-  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time), MAIN_CHANNEL_ID, "")
   if err != nil {
     log.Println("Error in HandleCheckin")
   }
-  PostThreadId(body.Ts)
 }
 
 // Reminds users who have not completed checkin to complete checkin
@@ -541,16 +549,18 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
     messageResp, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, body.Event.Text), MAIN_CHANNEL_ID, threadId)
     log.Println(messageResp.Error)
   } else if body.Type == "event_callback" && body.Event.Type == "app_mention" {
+    MTX.Lock()
     if !IsCutoffOK() {
       log.Println("Cutoff too soon in app mention callback")
       w.Write([]byte("Cutoff too soon in app mention callback"))
+      MTX.Unlock()
       return
-    } else {
-      LAST_MESSAGE = time.Now()
     }
+
     if strings.Contains(body.Event.Text, OPEN_CHECKIN_STR) {
       OpenCheckin()
       log.Println("Checkin Opened by Event Callback")
+      LAST_MESSAGE = time.Now()
       w.Write([]byte("Checkin opened"))
     } else if strings.Contains(body.Event.Text, CLOSE_CHECKIN_STR) {
       CloseCheckin()
@@ -558,12 +568,14 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       w.Write([]byte("Checkin closed"))
     } else if strings.Contains(body.Event.Text, REMIND_CHECKIN_STR) { 
       RemindCheckin()
+      LAST_MESSAGE = time.Now()
       log.Println("Remind Awaiting by Event Callback")
       w.Write([]byte("Checkin reminded"))
     } else {
       log.Println("No action performed in app mention callback")
       w.Write([]byte("No action performed in app mention callback"))
     }
+    MTX.Unlock()
   } else {
     log.Println("Unknown callback:")
     log.Println(req)
