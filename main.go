@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+  "io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -19,7 +20,6 @@ var API_TOKEN string
 const SERVICE_URL = "https://slack.com/api/"
 var MAIN_CHANNEL_ID string
 var MAIN_CHANNEL_NAME string
-var CURRENT_THREAD_ID string
 var USER_LIST []string
 const BOT_NAME = "c4c_checkin"
 var CUSTOM_ADMIN_APPENDIX string
@@ -27,6 +27,9 @@ var ADMIN_USERS []string
 var OPEN_CHECKIN_STR string
 var CLOSE_CHECKIN_STR string
 var REMIND_CHECKIN_STR string
+const TEMP_FILE = "temp_thread"
+var LAST_MESSAGE time.Time
+var LAST_MESSAGE_CUTOFF_MILLI time.Duration
 
 // type to unmarshal JSON Slack responses into
 type SlackResponse struct {
@@ -60,6 +63,19 @@ type UserInfo struct {
   Id string
   Real_name string
 }
+
+// determines if time is within allowed cutoff for heroku dyno startup
+// returns true if it's okay to send another message, false otherwise
+func IsCutoffOK() bool {
+  defTime := time.Time{}
+  if LAST_MESSAGE == defTime {
+    return true
+  }
+  curr := time.Now()
+  dur := curr.Sub(LAST_MESSAGE).Milliseconds()
+  return LAST_MESSAGE_CUTOFF_MILLI.Milliseconds() <= dur
+}
+  
 
 // converts a string map to a JSON string
 func StringMapToPostBody(m map[string]string) string {
@@ -118,6 +134,25 @@ func FlattenList(strs []string) string {
     }
   }
   return builder.String()
+}
+
+// writes to the 'persistent' temp file for storing the current
+// thread id, since a database would be overkill here
+// call with an empty string to clear the file
+func PostThreadId(id string) error {
+  return ioutil.WriteFile(TEMP_FILE, []byte(id), 0644)
+}
+
+// reads the 'persistent' temp file for getting teh current
+// thread id
+func GetThreadId() (body string, err error) {
+  fileInfo, err := os.Stat(TEMP_FILE)
+  if os.IsNotExist(err) || !fileInfo.IsDir() {
+    return "", nil
+  }
+
+  res, err := ioutil.ReadFile(TEMP_FILE)
+  return string(res), err
 }
 
 // take a request/response body and parse it into a string
@@ -400,8 +435,9 @@ func CloseCheckin() {
   } else {
     uncompletedMessage = fmt.Sprintf(" These users did not complete the checkin: %s", uncompletedUsers)
   }
-  SendMessage(fmt.Sprintf("Checkin is now closed.%s", uncompletedMessage), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
-  CURRENT_THREAD_ID = ""
+  thread_id, _ := GetThreadId()
+  SendMessage(fmt.Sprintf("Checkin is now closed.%s", uncompletedMessage), MAIN_CHANNEL_ID, thread_id)
+  PostThreadId("")
 }
 
 // Opens checkin by getting the main channel id, notifying users, opening the 
@@ -422,8 +458,7 @@ func OpenCheckin() {
   if err != nil {
     log.Println("Error in HandleCheckin")
   }
-
-  CURRENT_THREAD_ID = body.Ts
+  PostThreadId(body.Ts)
 }
 
 // Reminds users who have not completed checkin to complete checkin
@@ -446,7 +481,7 @@ func LogVars(w http.ResponseWriter, r *http.Request) {
   log.Println("MAIN_CHANNEL_ID")
   log.Println(MAIN_CHANNEL_ID)
   log.Println("CURRENT_THREAD_ID")
-  log.Println(CURRENT_THREAD_ID)
+  log.Println(GetThreadId())
   log.Println("USER_LIST")
   log.Println(USER_LIST)
   log.Println("BOT_NAME")
@@ -455,6 +490,14 @@ func LogVars(w http.ResponseWriter, r *http.Request) {
   log.Println(OPEN_CHECKIN_STR)
   log.Println("CLOSE_CHECKIN_STR")
   log.Println(CLOSE_CHECKIN_STR)
+  log.Println("REMIND_CHECKIN_STR")
+  log.Println(REMIND_CHECKIN_STR)
+  log.Println("TEMP_FILE")
+  log.Println(TEMP_FILE)
+  log.Println("LAST_MESSAGE")
+  log.Println(LAST_MESSAGE.Format("Jan 2, 2006 15:04:05.123"))
+  log.Println("LAST_MESSAGE_CUTOFF_MILLI")
+  log.Println(string(LAST_MESSAGE_CUTOFF_MILLI.Milliseconds()))
   w.Write([]byte("Done"))
 }
 
@@ -478,7 +521,8 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       return
     }
     log.Printf("Handle Message Callback for user: %s\n", body.Event.User)
-    if CURRENT_THREAD_ID == "" {
+    threadId, _ := GetThreadId()
+    if threadId == "" {
       MessageUser(body.Event.User, "There is currently no open checkin session. Please try again later.")
       return
     }
@@ -494,20 +538,31 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
     }
     MessageUser(body.Event.User, fmt.Sprintf("Hey, thanks for your response! You should soon see it in <#%s> under the most recent thread. Hope the rest of your day goes well ;)", MAIN_CHANNEL_ID))
     log.Printf("%s's Response: %s", name, body.Event.Text)
-    messageResp, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, body.Event.Text), MAIN_CHANNEL_ID, CURRENT_THREAD_ID)
+    messageResp, err := SendMessage(fmt.Sprintf("%s's Response: %s", name, body.Event.Text), MAIN_CHANNEL_ID, threadId)
     log.Println(messageResp.Error)
   } else if body.Type == "event_callback" && body.Event.Type == "app_mention" {
+    if !IsCutoffOK() {
+      log.Println("Cutoff too soon in app mention callback")
+      w.Write([]byte("Cutoff too soon in app mention callback"))
+      return
+    } else {
+      LAST_MESSAGE = time.Now()
+    }
     if strings.Contains(body.Event.Text, OPEN_CHECKIN_STR) {
       OpenCheckin()
       log.Println("Checkin Opened by Event Callback")
+      w.Write([]byte("Checkin opened"))
     } else if strings.Contains(body.Event.Text, CLOSE_CHECKIN_STR) {
       CloseCheckin()
       log.Println("Checkin Closed by Event Callback")
+      w.Write([]byte("Checkin closed"))
     } else if strings.Contains(body.Event.Text, REMIND_CHECKIN_STR) { 
       RemindCheckin()
       log.Println("Remind Awaiting by Event Callback")
+      w.Write([]byte("Checkin reminded"))
     } else {
-      log.Println("No action performed in Event Callback")
+      log.Println("No action performed in app mention callback")
+      w.Write([]byte("No action performed in app mention callback"))
     }
   } else {
     log.Println("Unknown callback:")
@@ -539,7 +594,8 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
 // if the given user_id is not part of the admin users global var or empty,
 // then the function does not proceed
 func RemindAwaiting(w http.ResponseWriter, r *http.Request) {
-  if CURRENT_THREAD_ID == "" {
+  threadId, _ := GetThreadId()
+  if threadId == "" {
     w.Write([]byte("There is currently no open checkin session, try again later ;)"))
   }
 
@@ -570,6 +626,7 @@ func main() {
   if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
+  LAST_MESSAGE_CUTOFF_MILLI, _ = time.ParseDuration("30000ms")
 
   if OPEN_CHECKIN_STR == CLOSE_CHECKIN_STR {
     log.Println("OPEN_CHECKIN_STR and CLOSE_CHECKIN_STR are the same, cannot open or close checkin using reminders")
