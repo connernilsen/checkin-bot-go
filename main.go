@@ -652,7 +652,7 @@ func main() {
   if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
-  LAST_MESSAGE_CUTOFF_MILLI, _ = time.ParseDuration("10000ms")
+  LAST_MESSAGE_CUTOFF_MILLI, _ = time.ParseDuration("30000ms")
 
   if OPEN_CHECKIN_STR == CLOSE_CHECKIN_STR {
     log.Println("OPEN_CHECKIN_STR and CLOSE_CHECKIN_STR are the same, cannot open or close checkin using reminders")
