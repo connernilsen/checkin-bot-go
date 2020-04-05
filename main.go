@@ -3,9 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+  "database/sql"
 	"fmt"
 	"io"
-  "io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +15,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
+  _ "github.com/lib/pq"
 )
 
 var API_TOKEN string
@@ -28,10 +29,10 @@ var ADMIN_USERS []string
 var OPEN_CHECKIN_STR string
 var CLOSE_CHECKIN_STR string
 var REMIND_CHECKIN_STR string
-const TEMP_FILE = "../temp_thread"
 var LAST_MESSAGE time.Time
 var LAST_MESSAGE_CUTOFF_MILLI time.Duration
 var MTX = sync.Mutex{}
+var DB *sql.DB
 
 // type to unmarshal JSON Slack responses into
 type SlackResponse struct {
@@ -138,28 +139,54 @@ func FlattenList(strs []string) string {
   return builder.String()
 }
 
-// writes to the 'persistent' temp file for storing the current
-// thread id, since a database would be overkill here
-// call with an empty string to clear the file
-func PostThreadId(id string) error {
-  err := ioutil.WriteFile(TEMP_FILE, []byte(id), 0644)
+// sets up db by removing and recreating threads table
+func DBSetup() *sql.DB {
+  dbUrl := os.Getenv("DATABASE_URL")
+  localDB, err := sql.Open("postgres", dbUrl)
   if err != nil {
-    log.Println("Error posting thread id")
-    log.Println(err)
+    log.Fatalf("Error opening db connection %q\n", err)
   }
-  return err
+
+  if _, err = localDB.Exec("CREATE TABLE IF NOT EXISTS threads (id VARCHAR(50))"); err != nil {
+    log.Printf("Error creating db %q\n", err)
+    return nil
+  }
+
+  return localDB
 }
 
-// reads the 'persistent' temp file for getting teh current
-// thread id
-func GetThreadId() (body string, err error) {
-  fileInfo, err := os.Stat(TEMP_FILE)
-  if os.IsNotExist(err) || !fileInfo.IsDir() {
-    return "", nil
+func CleanDB() {
+  if _, err := DB.Exec("TRUNCATE threads"); err != nil {
+    log.Printf("Error truncating db %q\n", err)
+  }
+}
+
+// create thread id in threads table
+func PostThreadId(id string) {
+  CleanDB()
+
+  if _, err := DB.Exec(fmt.Sprintf("INSERT INTO threads VALUES (%s)", id)); err != nil {
+    log.Printf("Error inserting into db %q\n", err)
+  }
+}
+
+func GetThreadId() (id string) {
+  rows, err := DB.Query("SELECT id FROM threads")
+  if err != nil {
+    log.Printf("Error getting thread ids %q\n", err)
+    return ""
   }
 
-  res, err := ioutil.ReadFile(TEMP_FILE)
-  return string(res), err
+  defer rows.Close()
+  if rows.Next() {
+    if err = rows.Scan(&id); err != nil {
+      log.Printf("Error converting id to string %q\n", err)
+      return ""
+    }
+    return id
+  }
+  log.Println("No rows found")
+  return ""
 }
 
 // take a request/response body and parse it into a string
@@ -442,7 +469,7 @@ func CloseCheckin() {
   } else {
     uncompletedMessage = fmt.Sprintf(" These users did not complete the checkin: %s", uncompletedUsers)
   }
-  thread_id, _ := GetThreadId()
+  thread_id := GetThreadId()
   SendMessage(fmt.Sprintf("Checkin is now closed.%s", uncompletedMessage), MAIN_CHANNEL_ID, thread_id)
   PostThreadId("")
 }
@@ -500,8 +527,6 @@ func LogVars(w http.ResponseWriter, r *http.Request) {
   log.Println(CLOSE_CHECKIN_STR)
   log.Println("REMIND_CHECKIN_STR")
   log.Println(REMIND_CHECKIN_STR)
-  log.Println("TEMP_FILE")
-  log.Println(TEMP_FILE)
   log.Println("LAST_MESSAGE")
   log.Println(LAST_MESSAGE.Format("Jan 2, 2006 15:04:05.123"))
   log.Println("LAST_MESSAGE_CUTOFF_MILLI")
@@ -529,7 +554,7 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       return
     }
     log.Printf("Handle Message Callback for user: %s\n", body.Event.User)
-    threadId, _ := GetThreadId()
+    threadId := GetThreadId()
     if threadId == "" {
       MessageUser(body.Event.User, "There is currently no open checkin session. Please try again later.")
       return
@@ -606,7 +631,7 @@ func HandleCheckin(w http.ResponseWriter, r *http.Request) {
 // if the given user_id is not part of the admin users global var or empty,
 // then the function does not proceed
 func RemindAwaiting(w http.ResponseWriter, r *http.Request) {
-  threadId, _ := GetThreadId()
+  threadId := GetThreadId()
   if threadId == "" {
     w.Write([]byte("There is currently no open checkin session, try again later ;)"))
   }
@@ -638,11 +663,14 @@ func main() {
   if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
-  LAST_MESSAGE_CUTOFF_MILLI, _ = time.ParseDuration("30000ms")
+  LAST_MESSAGE_CUTOFF_MILLI, _ = time.ParseDuration("10000ms")
 
   if OPEN_CHECKIN_STR == CLOSE_CHECKIN_STR {
     log.Println("OPEN_CHECKIN_STR and CLOSE_CHECKIN_STR are the same, cannot open or close checkin using reminders")
   }
+
+  DB = DBSetup()
+  CleanDB()
 
   // sets up router
   log.Printf("Server starting on Port: %s...\n", port)
