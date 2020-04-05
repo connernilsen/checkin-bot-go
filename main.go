@@ -155,6 +155,7 @@ func DBSetup() *sql.DB {
   return localDB
 }
 
+// truncates the threads table
 func CleanDB() {
   if _, err := DB.Exec("TRUNCATE threads"); err != nil {
     log.Printf("Error truncating db %q\n", err)
@@ -390,14 +391,8 @@ func MessageUser(userId, message string) {
   params := make(map[string]string)
   params["users"] = userId
   res, err := PerformPost(url, nil, params, true)
-  body, err := HandleResponse(res, err, false)
+  body, _ := HandleResponse(res, err, false)
 
-  if err != nil || !body.Ok {
-    log.Println("Error in MessageUser:")
-    log.Println(err)
-    log.Printf("body.Ok: %t\n", body.Ok)
-    return 
-  }
   newChannelId := body.Channel["id"]
 
   SendMessage(message, newChannelId, "")
@@ -410,13 +405,7 @@ func GetUsername(userId string) (name string, err error) {
   params["user"] = userId
   res, err := PerformGet(url, nil, params, true)
 
-  body, err := HandleResponse(res, err, false)
-  if err != nil || !body.Ok {
-    log.Println("Error in MessageUser:")
-    log.Println(err)
-    log.Printf("body.Ok: %t\n", body.Ok)
-    return "", err
-  }
+  body, _ := HandleResponse(res, err, false)
 
   return body.User.Real_name, err
 }
