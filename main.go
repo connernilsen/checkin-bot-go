@@ -22,7 +22,6 @@ var API_TOKEN string
 const SERVICE_URL = "https://slack.com/api/"
 var MAIN_CHANNEL_ID string
 var MAIN_CHANNEL_NAME string
-var USER_LIST []string
 const BOT_NAME = "c4c_checkin"
 var CUSTOM_ADMIN_APPENDIX string
 var ADMIN_USERS []string
@@ -147,7 +146,22 @@ func DBSetup() *sql.DB {
     log.Fatalf("Error opening db connection %q\n", err)
   }
 
-  if _, err = localDB.Exec("CREATE TABLE IF NOT EXISTS threads (id VARCHAR(50))"); err != nil {
+  if _, err = localDB.Exec("DROP TABLE IF EXISTS threads;"); err != nil {
+    log.Printf("Error dropping db %q\n", err)
+    return nil
+  }
+
+  if _, err = localDB.Exec("DROP TABLE IF EXISTS users;"); err != nil {
+    log.Printf("Error dropping db %q\n", err)
+    return nil
+  }
+
+  if _, err = localDB.Exec("CREATE TABLE threads (id TEXT PRIMARY KEY);"); err != nil {
+    log.Printf("Error creating db %q\n", err)
+    return nil
+  }
+
+  if _, err = localDB.Exec("CREATE TABLE users (id TEXT PRIMARY KEY);"); err != nil {
     log.Printf("Error creating db %q\n", err)
     return nil
   }
@@ -157,22 +171,72 @@ func DBSetup() *sql.DB {
 
 // truncates the threads table
 func CleanDB() {
-  if _, err := DB.Exec("TRUNCATE threads"); err != nil {
+  if _, err := DB.Exec("TRUNCATE threads;"); err != nil {
     log.Printf("Error truncating db %q\n", err)
   }
+  if _, err := DB.Exec("TRUNCATE users;"); err != nil {
+    log.Printf("Error truncating db %q\n", err)
+  }
+}
+
+// removes the given user from the db
+func UpdateUser(userId string) bool {
+  res, err := DB.Exec(fmt.Sprintf("DELETE FROM users WHERE id = '%s';", userId)) 
+  if err != nil {
+    log.Printf("Error deleting user form db %q\n", err)
+  }
+  rowsAff, _ := res.RowsAffected()
+  return rowsAff != 0
 }
 
 // create thread id in threads table
 func PostThreadId(id string) {
   CleanDB()
 
-  if _, err := DB.Exec(fmt.Sprintf("INSERT INTO threads VALUES (%s)", id)); err != nil {
+  stmt := fmt.Sprintf("INSERT INTO threads VALUES ('%s');", id)
+  log.Println(stmt)
+  if _, err := DB.Exec(stmt); err != nil {
     log.Printf("Error inserting into db %q\n", err)
   }
 }
 
+// sets the given list of user ids in the db
+func PostUsers(users []string) {
+  for _, user := range users {
+    stmt := fmt.Sprintf("INSERT INTO users VALUES ('%s');", user)
+    log.Println(stmt)
+    if _, err := DB.Exec(stmt); err != nil {
+      log.Printf("Error inserting into db %q\n", err)
+    }
+  }
+}
+
+// gets the list of users for the channel
+func GetUsers(channelId string, updateUsers bool) (users []string) {
+  if updateUsers {
+    SetUsers(channelId, false)
+  }
+  //users = make([]string, 0)
+  rows, err := DB.Query("SELECT id FROM users;")
+  if err != nil {
+    log.Printf("Error getting users %q\n", err)
+    return users
+  }
+  defer rows.Close()
+  for rows.Next() {
+    var user string
+    if err = rows.Scan(&user); err != nil {
+      log.Printf("Error converting user id to string %q\n", err)
+    }
+    users = append(users, user)
+  }
+
+  return users[:len(users)]
+}
+
+
 func GetThreadId() (id string) {
-  rows, err := DB.Query("SELECT id FROM threads")
+  rows, err := DB.Query("SELECT id FROM threads;")
   if err != nil {
     log.Printf("Error getting thread ids %q\n", err)
     return ""
@@ -362,8 +426,8 @@ func GetChannels(logAnswer bool) (channels map[string]ConversationList) {
   return channels
 }
 
-// get all users in the given channel and optionally log the response, then return the list of userIds
-func GetUsers(channelId string, logAnswer bool) (users []string) {
+// sets the list of users in the db for the given channel
+func SetUsers(channelId string, logAnswer bool) {
   url := "conversations.members"
   params := make(map[string]string)
   params["channel"] = channelId
@@ -371,18 +435,18 @@ func GetUsers(channelId string, logAnswer bool) (users []string) {
   body, err := HandleResponse(res, err, false)
 
   if err != nil || !body.Ok {
-    log.Println("Error in GetUsers:")
+    log.Println("Error in SetUsers:")
     log.Println(err)
     log.Printf("body.Ok: %t\n", body.Ok)
     log.Printf("response body error: %s\n", body.Error)
-    return nil
+    return 
   }
 
   if logAnswer {
     log.Println(body.Members)
   }
 
-  return body.Members
+  PostUsers(body.Members)
 }
 
 // send the given message to the given user by userId
@@ -391,7 +455,11 @@ func MessageUser(userId, message string) {
   params := make(map[string]string)
   params["users"] = userId
   res, err := PerformPost(url, nil, params, true)
-  body, _ := HandleResponse(res, err, false)
+  body, err := HandleResponse(res, err, false)
+
+  if err != nil {
+    log.Println("Error in HandleCheckin")
+  }
 
   newChannelId := body.Channel["id"]
 
@@ -408,19 +476,6 @@ func GetUsername(userId string) (name string, err error) {
   body, _ := HandleResponse(res, err, false)
 
   return body.User.Real_name, err
-}
-
-// update the global list of users by setting the user to an empty string if they should be
-// removed (i.e. if they have already responded)
-// returns a boolean representing whether or not the user has been updated
-func UpdateUserList(userId string) bool {
-  for pos, id := range USER_LIST {
-    if userId == id {
-      USER_LIST[pos] = ""
-      return true
-    }
-  }
-  return false
 }
 
 // the handler for the /test endpoint
@@ -451,7 +506,7 @@ func CloseCheckinHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func CloseCheckin() {
-  uncompletedUsers := FlattenList(MapIdsToNames(USER_LIST))
+  uncompletedUsers := FlattenList(MapIdsToNames(GetUsers("", false)))
   var uncompletedMessage string
   if uncompletedUsers == "" {
     uncompletedMessage = ""
@@ -472,25 +527,21 @@ func OpenCheckin() {
 
   loc, _ := time.LoadLocation("America/New_York")
   time := time.Now().In(loc).Format("Jan 2, 2006 at 3:04pm")
-  body, err := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time), MAIN_CHANNEL_ID, "")
+  body, _ := SendMessage(fmt.Sprintf("Here are the results for the standup on `%s`", time), MAIN_CHANNEL_ID, "")
   PostThreadId(body.Ts)
 
-  USER_LIST = GetUsers(MAIN_CHANNEL_ID, false)
-  for _, userId := range USER_LIST {
+  userList := GetUsers(MAIN_CHANNEL_ID, true)
+  log.Println("User List:")
+  log.Println(userList)
+  for _, userId := range userList {
     MessageUser(userId, "Hey! It's time for your checkin. Let me know what you're gonna do, how long you think it will take, and when you plan on working on this -- *in one message please*. Thanks :)")
-  }
-
-  if err != nil {
-    log.Println("Error in HandleCheckin")
   }
 }
 
 // Reminds users who have not completed checkin to complete checkin
 func RemindCheckin() {
-  for _, userId := range USER_LIST {
-    if userId != "" {
-      MessageUser(userId, "Don't forget to complete the checkin session!")
-    }
+  for _, userId := range GetUsers("", false) {
+    MessageUser(userId, "Don't forget to complete the checkin session!")
   }
 }
 
@@ -507,7 +558,7 @@ func LogVars(w http.ResponseWriter, r *http.Request) {
   log.Println("CURRENT_THREAD_ID")
   log.Println(GetThreadId())
   log.Println("USER_LIST")
-  log.Println(USER_LIST)
+  log.Println(GetUsers("", false))
   log.Println("BOT_NAME")
   log.Println(BOT_NAME)
   log.Println("OPEN_CHECKIN_STR")
@@ -549,7 +600,7 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       return
     }
 
-    if !UpdateUserList(body.Event.User) {
+    if !UpdateUser(body.Event.User) {
       MessageUser(body.Event.User, "Cannot change body once sent, please go to thread and post followup.")
       return
     }
@@ -570,11 +621,11 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       MTX.Unlock()
       return
     }
+    LAST_MESSAGE = time.Now()
 
     if strings.Contains(body.Event.Text, OPEN_CHECKIN_STR) {
       OpenCheckin()
       log.Println("Checkin Opened by Event Callback")
-      LAST_MESSAGE = time.Now()
       w.Write([]byte("Checkin opened"))
     } else if strings.Contains(body.Event.Text, CLOSE_CHECKIN_STR) {
       CloseCheckin()
@@ -582,7 +633,6 @@ func HandleCallback(w http.ResponseWriter, r *http.Request) {
       w.Write([]byte("Checkin closed"))
     } else if strings.Contains(body.Event.Text, REMIND_CHECKIN_STR) { 
       RemindCheckin()
-      LAST_MESSAGE = time.Now()
       log.Println("Remind Awaiting by Event Callback")
       w.Write([]byte("Checkin reminded"))
     } else {
@@ -652,14 +702,13 @@ func main() {
   if port == "" || port == ":" || API_TOKEN == "" || MAIN_CHANNEL_NAME == "" {
 		log.Fatal("PORT, MAIN_CHANNEL_NAME, and API_TOKEN must be set")
 	}
-  LAST_MESSAGE_CUTOFF_MILLI, _ = time.ParseDuration("30000ms")
+  LAST_MESSAGE_CUTOFF_MILLI, _ = time.ParseDuration("1m")
 
   if OPEN_CHECKIN_STR == CLOSE_CHECKIN_STR {
     log.Println("OPEN_CHECKIN_STR and CLOSE_CHECKIN_STR are the same, cannot open or close checkin using reminders")
   }
 
   DB = DBSetup()
-  CleanDB()
 
   // sets up router
   log.Printf("Server starting on Port: %s...\n", port)
