@@ -139,43 +139,25 @@ func FlattenList(strs []string) string {
 }
 
 // sets up db by removing and recreating threads table
-func DBSetup() *sql.DB {
-  dbUrl := os.Getenv("DATABASE_URL")
-  localDB, err := sql.Open("postgres", dbUrl)
-  if err != nil {
-    log.Fatalf("Error opening db connection %q\n", err)
-  }
-
-  if _, err = localDB.Exec("DROP TABLE IF EXISTS threads;"); err != nil {
+func DBSetup() {
+  if _, err := DB.Exec("DROP TABLE IF EXISTS threads;"); err != nil {
     log.Printf("Error dropping db %q\n", err)
-    return nil
+    return 
   }
 
-  if _, err = localDB.Exec("DROP TABLE IF EXISTS users;"); err != nil {
+  if _, err := DB.Exec("DROP TABLE IF EXISTS users;"); err != nil {
     log.Printf("Error dropping db %q\n", err)
-    return nil
+    return
   }
 
-  if _, err = localDB.Exec("CREATE TABLE threads (id TEXT PRIMARY KEY);"); err != nil {
+  if _, err := DB.Exec("CREATE TABLE threads (id TEXT PRIMARY KEY);"); err != nil {
     log.Printf("Error creating db %q\n", err)
-    return nil
+    return 
   }
 
-  if _, err = localDB.Exec("CREATE TABLE users (id TEXT PRIMARY KEY);"); err != nil {
+  if _, err := DB.Exec("CREATE TABLE users (id TEXT PRIMARY KEY);"); err != nil {
     log.Printf("Error creating db %q\n", err)
-    return nil
-  }
-
-  return localDB
-}
-
-// truncates the threads table
-func CleanDB() {
-  if _, err := DB.Exec("TRUNCATE threads;"); err != nil {
-    log.Printf("Error truncating db %q\n", err)
-  }
-  if _, err := DB.Exec("TRUNCATE users;"); err != nil {
-    log.Printf("Error truncating db %q\n", err)
+    return 
   }
 }
 
@@ -191,7 +173,7 @@ func UpdateUser(userId string) bool {
 
 // create thread id in threads table
 func PostThreadId(id string) {
-  CleanDB()
+  DBSetup()
 
   stmt := fmt.Sprintf("INSERT INTO threads VALUES ('%s');", id)
   log.Println(stmt)
@@ -708,7 +690,12 @@ func main() {
     log.Println("OPEN_CHECKIN_STR and CLOSE_CHECKIN_STR are the same, cannot open or close checkin using reminders")
   }
 
-  DB = DBSetup()
+  dbUrl := os.Getenv("DATABASE_URL")
+  DB, err = sql.Open("postgres", dbUrl)
+  if err != nil {
+    log.Fatalf("Error opening db connection %q\n", err)
+  }
+
 
   // sets up router
   log.Printf("Server starting on Port: %s...\n", port)
