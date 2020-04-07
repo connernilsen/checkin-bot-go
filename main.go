@@ -696,6 +696,7 @@ func main() {
     log.Fatalf("Error opening db connection %q\n", err)
   }
 
+  GetChannels(false)
 
   // sets up router
   log.Printf("Server starting on Port: %s...\n", port)
